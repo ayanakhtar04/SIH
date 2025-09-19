@@ -1,0 +1,31 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PathKeeper: Backend (Waitress on 127.0.0.1:8000)",
+      "type": "shell",
+      "options": { "cwd": "d:/smart India/SIH/SIH/SIH/PathKeeper/backend" },
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-Command",
+        "if(!(Test-Path .venv)){python -m venv .venv}; ./.venv/Scripts/pip install -r requirements.txt; $env:HOST='127.0.0.1'; $env:PORT='8000'; ./.venv/Scripts/python -u wsgi.py"
+      ],
+      "isBackground": true
+    },
+    {
+      "label": "PathKeeper: Frontend (Vite dev)",
+      "type": "shell",
+      "options": { "cwd": "d:/smart India/SIH/SIH/SIH/PathKeeper/frontend" },
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-Command",
+        "$env:BACKEND_URL='http://127.0.0.1:8000'; npm run dev"
+      ],
+      "isBackground": true
+    }
+  ]
+}

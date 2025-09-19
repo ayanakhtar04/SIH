@@ -1,0 +1,9 @@
+.kpiCard {
+  background-color: var(--surface-color);
+  padding: 24px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+.kpiValue { font-size: 36px; font-weight: 600; display: block; margin: 8px 0; }
+.kpiTitle { font-size: 14px; color: var(--text-secondary); }
+.kpiSubtitle { font-size: 12px; color: var(--text-secondary); }
