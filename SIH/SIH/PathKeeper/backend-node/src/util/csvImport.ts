@@ -8,6 +8,12 @@ export interface RawStudentRow {
   program?: string;
   year?: string;
   riskScore?: string;
+  attendancePercent?: string;
+  cgpa?: string;
+  assignmentsCompleted?: string;
+  assignmentsTotal?: string;
+  subjects?: string; // semi-colon or comma separated
+  mentorAcademicNote?: string;
 }
 
 export interface ParsedStudentRow {
@@ -17,6 +23,12 @@ export interface ParsedStudentRow {
   program?: string | null;
   year?: number | null;
   riskScore?: number | null;
+  attendancePercent?: number | null;
+  cgpa?: number | null;
+  assignmentsCompleted?: number | null;
+  assignmentsTotal?: number | null;
+  subjects?: string[] | null;
+  mentorAcademicNote?: string | null;
 }
 
 export interface ImportResult {
@@ -71,6 +83,29 @@ export function parseAndValidateCSV(csv: string, opts: ValidateOptions): ImportR
       const r = Number(rec.riskScore);
       if (!Number.isNaN(r) && r >= 0 && r <= 1) riskScore = r; else rowErrors.push('Invalid riskScore');
     }
+    // Academic metrics (all optional)
+    let attendancePercent: number | null = null;
+    if (rec.attendancePercent) {
+      const a = Number(rec.attendancePercent);
+      if (!Number.isNaN(a) && a >= 0 && a <= 100) attendancePercent = a; else rowErrors.push('Invalid attendancePercent');
+    }
+    let cgpa: number | null = null;
+    if (rec.cgpa) {
+      const g = Number(rec.cgpa);
+      if (!Number.isNaN(g) && g >= 0 && g <= 10) cgpa = g; else rowErrors.push('Invalid cgpa');
+    }
+    let assignmentsCompleted: number | null = null;
+    if (rec.assignmentsCompleted) {
+      const ac = Number(rec.assignmentsCompleted);
+      if (!Number.isNaN(ac) && ac >= 0) assignmentsCompleted = ac; else rowErrors.push('Invalid assignmentsCompleted');
+    }
+    let assignmentsTotal: number | null = null;
+    if (rec.assignmentsTotal) {
+      const at = Number(rec.assignmentsTotal);
+      if (!Number.isNaN(at) && at >= 0) assignmentsTotal = at; else rowErrors.push('Invalid assignmentsTotal');
+    }
+    const subjectsArr: string[] | null = rec.subjects ? rec.subjects.split(/[;,]/).map(s=> s.trim()).filter(Boolean).slice(0,50) : null;
+    const mentorAcademicNote = rec.mentorAcademicNote ? rec.mentorAcademicNote.slice(0,5000) : null;
     if (rowErrors.length === 0) {
       rows.push({
         studentCode: code!,
@@ -78,7 +113,13 @@ export function parseAndValidateCSV(csv: string, opts: ValidateOptions): ImportR
         email: email!,
         program: rec.program?.trim() || null,
         year,
-        riskScore
+        riskScore,
+        attendancePercent,
+        cgpa,
+        assignmentsCompleted,
+        assignmentsTotal,
+        subjects: subjectsArr,
+        mentorAcademicNote
       });
       seenCodes.add(code!);
       seenEmails.add(email!);

@@ -14,6 +14,7 @@ export const API = {
   predict: `${API_BASE.replace(/\/$/, '')}/predict`,
   regenerate: `${API_BASE.replace(/\/$/, '')}/regenerate_dataset`,
   health: `/health`,
+  notifications: `${API_BASE.replace(/\/$/, '')}/notifications`,
 };
 
 export async function fetchImportTemplate(token?: string) {

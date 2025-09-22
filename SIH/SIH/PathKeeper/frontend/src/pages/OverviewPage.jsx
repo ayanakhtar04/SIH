@@ -18,11 +18,12 @@ const OverviewPage = () => {
       setError('');
       try {
         // Fetch a large page to cover most students; backend caps at 200 per page
-        const url = `${API.students}?page=1&page_size=200&sort_by=risk_level&sort_dir=desc`;
-        const res = await fetch(url);
+  // Adjusted params to align with backend (pageSize, includeUnassigned). Sorting not yet supported directly.
+  const url = `${API.students}?page=1&pageSize=200&includeUnassigned=1`;
+  const res = await fetch(url/*, { headers:{ Authorization: `Bearer ${token}` } }*/);
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         const json = await res.json();
-        setStudents(json.data || []);
+  setStudents(json.data || json.students || []);
       } catch (e) {
         setError(String(e));
       } finally {
@@ -33,9 +34,9 @@ const OverviewPage = () => {
   }, []);
 
   const { highCount, medCount, lowCount, highList } = useMemo(() => {
-    const high = students.filter(s => s.risk_level === 'High Risk');
-    const med = students.filter(s => s.risk_level === 'Medium Risk');
-    const low = students.filter(s => s.risk_level === 'Low Risk');
+  const high = students.filter(s => (s.riskTier || s.risk_level) && (s.riskTier?.toLowerCase?.() === 'high' || s.risk_level === 'High Risk'));
+  const med = students.filter(s => (s.riskTier || s.risk_level) && (s.riskTier?.toLowerCase?.() === 'medium' || s.risk_level === 'Medium Risk'));
+  const low = students.filter(s => (s.riskTier || s.risk_level) && (s.riskTier?.toLowerCase?.() === 'low' || s.risk_level === 'Low Risk'));
     return {
       highCount: high.length,
       medCount: med.length,

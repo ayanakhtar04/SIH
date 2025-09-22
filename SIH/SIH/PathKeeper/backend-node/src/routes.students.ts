@@ -56,7 +56,7 @@ const importLimiter = rateLimit({
 
 // GET /api/students?page=1&pageSize=20&search=term
 studentsRouter.get('/', authRequired, async (req: AuthedRequest, res) => {
-  // Access control: admins see all, counselors & mentors are scoped to their own assigned students.
+  // Access control: admins see all, counselors & mentors are scoped to their own assigned students unless includeUnassigned flag is set.
   if (!(isAdmin(req.user?.role) || isCounselor(req.user?.role) || isMentor(req.user?.role))) {
     return res.status(403).json({ ok: false, error: 'Forbidden', status: 403 });
   }
@@ -64,10 +64,16 @@ studentsRouter.get('/', authRequired, async (req: AuthedRequest, res) => {
   const pageSizeRaw = parseInt(String(req.query.pageSize || '20'), 10) || 20;
   const pageSize = Math.min(Math.max(pageSizeRaw, 1), 100);
   const search = req.query.search ? String(req.query.search) : undefined;
-  // Mentor & counselor filtering: limit dataset to their own mentorId.
-  const mentorId = (isMentor(req.user?.role) || isCounselor(req.user?.role)) ? req.user?.id : undefined;
+  const includeUnassigned = String(req.query.includeUnassigned || '0') === '1';
+  const scoped = (isMentor(req.user?.role) || isCounselor(req.user?.role));
+  const mentorId = scoped ? req.user?.id : undefined;
 
   try {
+    if (scoped && includeUnassigned) {
+      const result = await listStudents({ page, pageSize, search }); // unfiltered result has shape { data, total, ... }
+      const filtered = result.data.filter((s: any) => !s.mentorId || s.mentorId === mentorId);
+      return res.json({ ok: true, data: filtered, total: filtered.length, page, pageSize, totalPages: Math.ceil(filtered.length / pageSize) });
+    }
     const result = await listStudents({ page, pageSize, search, mentorId });
     return res.json({ ok: true, ...result });
   } catch (err) {
@@ -184,14 +190,23 @@ studentsRouter.patch('/:id', authRequired, async (req: AuthedRequest, res) => {
   try {
     const student = await prisma.student.findUnique({ where:{ id } });
     if (!student) return res.status(404).json({ ok:false, error:'Not found' });
-    if (isMentor(req.user?.role) && student.mentorId !== req.user?.id) {
+    // Relaxed: mentors can edit if student is unassigned OR assigned to them. Still blocked if owned by someone else.
+    if (isMentor(req.user?.role) && student.mentorId && student.mentorId !== req.user?.id) {
       return res.status(403).json({ ok:false, error:'Forbidden' });
     }
     // Normalize inputs
-    const attendance = typeof update.attendancePercent === 'number' ? Math.min(100, Math.max(0, update.attendancePercent)) : student as any;
-    const cgpa = typeof update.cgpa === 'number' ? Math.min(10, Math.max(0, update.cgpa)) : (student as any);
-    const assignmentsCompleted = Number.isInteger(update.assignmentsCompleted) ? Math.max(0, update.assignmentsCompleted) : (student as any);
-    const assignmentsTotal = Number.isInteger(update.assignmentsTotal) ? Math.max(0, update.assignmentsTotal) : (student as any);
+    const attendance = typeof update.attendancePercent === 'number'
+      ? Math.min(100, Math.max(0, update.attendancePercent))
+      : (student as any).attendancePercent;
+    const cgpa = typeof update.cgpa === 'number'
+      ? Math.min(10, Math.max(0, update.cgpa))
+      : (student as any).cgpa;
+    const assignmentsCompleted = Number.isInteger(update.assignmentsCompleted)
+      ? Math.max(0, update.assignmentsCompleted)
+      : (student as any).assignmentsCompleted;
+    const assignmentsTotal = Number.isInteger(update.assignmentsTotal)
+      ? Math.max(0, update.assignmentsTotal)
+      : (student as any).assignmentsTotal;
     const subjectsArr = Array.isArray(update.subjects) ? update.subjects.slice(0,50) : undefined; // limit size
     const note = typeof update.mentorAcademicNote === 'string' ? update.mentorAcademicNote.slice(0,5000) : undefined;
 
@@ -200,12 +215,17 @@ studentsRouter.patch('/:id', authRequired, async (req: AuthedRequest, res) => {
     const currentCgpa = (student as any).cgpa ?? 0;
     const currentAC = (student as any).assignmentsCompleted ?? 0;
     const currentAT = (student as any).assignmentsTotal ?? 0;
-    const changed = attendance !== (student as any).attendancePercent || cgpa !== (student as any).cgpa || assignmentsCompleted !== currentAC || assignmentsTotal !== currentAT || subjectsArr || note;
+    const changed = (typeof attendance === 'number' && attendance !== (student as any).attendancePercent)
+      || (typeof cgpa === 'number' && cgpa !== (student as any).cgpa)
+      || (typeof assignmentsCompleted === 'number' && assignmentsCompleted !== currentAC)
+      || (typeof assignmentsTotal === 'number' && assignmentsTotal !== currentAT)
+      || !!subjectsArr || note !== undefined;
 
-    let riskScore = student.riskScore ?? 0.5;
+  const cgpaScale = Number(process.env.CGPA_SCALE) === 5 ? 5 : 10; // default scale 10 unless explicitly set to 5
+  let riskScore = student.riskScore ?? 0.5;
     if (changed) {
       const attComponent = (typeof attendance === 'number') ? (1 - attendance/100) : (1 - currentAttendance/100);
-      const cgpaComponent = (typeof cgpa === 'number') ? (1 - cgpa/10) : (1 - currentCgpa/10);
+  const cgpaComponent = (typeof cgpa === 'number') ? (1 - cgpa/ cgpaScale) : (1 - currentCgpa/ cgpaScale);
       const comp = (typeof assignmentsCompleted === 'number') ? assignmentsCompleted : currentAC;
       const tot = (typeof assignmentsTotal === 'number') ? assignmentsTotal : currentAT;
       const assignComponent = 1 - (tot>0 ? comp/Math.max(1,tot) : 0);
@@ -219,12 +239,12 @@ studentsRouter.patch('/:id', authRequired, async (req: AuthedRequest, res) => {
     // Build update SQL fallback (since Prisma client lacks new fields until schema regen). We attempt dynamic column presence.
     const cols: string[] = []; const params: any[] = [];
     function push(col: string, val: any) { cols.push(`${col} = ?`); params.push(val); }
-    if (typeof attendance === 'number') push('attendancePercent', attendance);
-    if (typeof cgpa === 'number') push('cgpa', cgpa);
-    if (subjectsArr) push('subjectsJson', JSON.stringify(subjectsArr));
-    if (typeof assignmentsCompleted === 'number') push('assignmentsCompleted', assignmentsCompleted);
-    if (typeof assignmentsTotal === 'number') push('assignmentsTotal', assignmentsTotal);
-    if (note !== undefined) push('mentorAcademicNote', note);
+  if (typeof update.attendancePercent === 'number') push('attendancePercent', attendance);
+  if (typeof update.cgpa === 'number') push('cgpa', cgpa);
+  if (subjectsArr) push('subjectsJson', JSON.stringify(subjectsArr));
+  if (Number.isInteger(update.assignmentsCompleted)) push('assignmentsCompleted', assignmentsCompleted);
+  if (Number.isInteger(update.assignmentsTotal)) push('assignmentsTotal', assignmentsTotal);
+  if (note !== undefined) push('mentorAcademicNote', note);
     if (changed) { push('riskScore', riskScore); push('lastRiskUpdated', new Date().toISOString()); }
     push('lastAcademicUpdate', new Date().toISOString());
     if (cols.length === 0) return res.json({ ok:true, student: { id: student.id, riskScore, riskTier: tier } });
@@ -282,6 +302,8 @@ studentsRouter.post('/import', authRequired, importLimiter, upload.single('file'
   if (!isAdmin(req.user?.role)) {
     return res.status(403).json({ ok: false, error: 'Forbidden', status: 403 });
   }
+  await ensureAcademicColumns();
+  await ensureRiskSnapshotTable();
 
   // Determine CSV source: multipart file OR raw text/csv body
   let csvContent: string | undefined;
@@ -307,13 +329,16 @@ studentsRouter.post('/import', authRequired, importLimiter, upload.single('file'
     return res.status(200).json(parsed); // Return validation feedback even if errors
   }
   if (dryRun) {
+    // If riskScore missing but academic metrics present, simulate inferred risk for preview
+    await maybeAttachInferredRisk(parsed.rows);
     return res.json(parsed);
   }
   let created = 0;
   try {
     await prisma.$transaction(async (tx) => {
+      await maybeAttachInferredRisk(parsed.rows, tx);
       for (const row of parsed.rows) {
-        await tx.student.create({
+        const createdStudent = await tx.student.create({
           data: {
             studentCode: row.studentCode,
             name: row.name,
@@ -325,6 +350,24 @@ studentsRouter.post('/import', authRequired, importLimiter, upload.single('file'
           }
         });
         created++;
+        // Persist academic columns via raw update (Prisma schema not yet extended) if any provided
+        const cols: string[] = []; const params: any[] = [];
+        function push(col: string, val: any) { cols.push(`${col} = ?`); params.push(val); }
+        if (typeof row.attendancePercent === 'number') push('attendancePercent', row.attendancePercent);
+        if (typeof row.cgpa === 'number') push('cgpa', row.cgpa);
+        if (typeof row.assignmentsCompleted === 'number') push('assignmentsCompleted', row.assignmentsCompleted);
+        if (typeof row.assignmentsTotal === 'number') push('assignmentsTotal', row.assignmentsTotal);
+        if (row.subjects && row.subjects.length) push('subjectsJson', JSON.stringify(row.subjects));
+        if (typeof row.mentorAcademicNote === 'string' && row.mentorAcademicNote.length) push('mentorAcademicNote', row.mentorAcademicNote);
+        if (cols.length) {
+          push('lastAcademicUpdate', new Date().toISOString());
+          if (row.riskScore != null) { push('lastRiskUpdated', new Date().toISOString()); }
+          params.push(createdStudent.id);
+          try { await tx.$executeRawUnsafe(`UPDATE "Student" SET ${cols.join(', ')} WHERE id = ?`, ...params); } catch { /* ignore */ }
+        }
+        if (row.riskScore != null) {
+          try { await tx.$executeRawUnsafe(`INSERT INTO "RiskSnapshot" (id, studentId, riskScore, source) VALUES (?, ?, ?, ?)`, crypto.randomUUID(), createdStudent.id, row.riskScore, 'import'); } catch { /* ignore */ }
+        }
       }
     });
   } catch (e) {
@@ -338,6 +381,52 @@ studentsRouter.post('/import', authRequired, importLimiter, upload.single('file'
     rows: parsed.rows
   });
 });
+
+// Helper: infer riskScore for rows missing it using active RiskModelConfig weights
+async function maybeAttachInferredRisk(rows: any[], tx?: any) {
+  // Load active config (raw SQL fallback) else use defaults
+  const client: any = tx || prisma;
+  let weights = { attendance: 0.35, gpa: 0.35, assignments: 0.2, notes: 0.1 };
+  try {
+    await client.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "RiskModelConfig" (
+      "id" TEXT PRIMARY KEY NOT NULL,
+      "version" INTEGER NOT NULL DEFAULT 1,
+      "weights" TEXT NOT NULL,
+      "thresholds" TEXT NOT NULL,
+      "active" INTEGER NOT NULL DEFAULT 1,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME
+    )`);
+  const rowsCfg = await client.$queryRawUnsafe("SELECT * FROM 'RiskModelConfig' WHERE active = 1 ORDER BY createdAt DESC LIMIT 1");
+    if (rowsCfg.length) {
+      try {
+        const parsed = JSON.parse(rowsCfg[0].weights);
+        if (parsed && typeof parsed === 'object') {
+          weights = { ...weights, ...parsed };
+        }
+      } catch { /* ignore parse */ }
+    }
+  } catch { /* ignore */ }
+  const totalW = weights.attendance + weights.gpa + weights.assignments + weights.notes;
+  function safeDiv(n: number, d: number) { return d === 0 ? 0 : n/d; }
+  const cgpaScale = Number(process.env.CGPA_SCALE) === 5 ? 5 : 10;
+  for (const r of rows) {
+    if (r.riskScore == null) {
+      // Build components as risk contributions (higher => higher risk)
+      const attComp = (typeof r.attendancePercent === 'number') ? (1 - (r.attendancePercent/100)) : 0.5; // unknown -> neutral 0.5
+  const gpaComp = (typeof r.cgpa === 'number') ? (1 - (r.cgpa/ cgpaScale)) : 0.5;
+      let assignComp = 0.5;
+      if (typeof r.assignmentsCompleted === 'number' && typeof r.assignmentsTotal === 'number' && r.assignmentsTotal > 0) {
+        assignComp = 1 - safeDiv(r.assignmentsCompleted, Math.max(1, r.assignmentsTotal));
+      }
+      let notePenalty = 0;
+      if (typeof r.mentorAcademicNote === 'string' && /fail|risk|struggl|drop|absent/i.test(r.mentorAcademicNote)) notePenalty = 1; // full weight usage
+      const weighted = (attComp * weights.attendance) + (gpaComp * weights.gpa) + (assignComp * weights.assignments) + (notePenalty * weights.notes);
+      const score = Math.max(0, Math.min(1, weighted / (totalW || 1)));
+      r.riskScore = score;
+    }
+  }
+}
 
 // GET /api/students/import/template  (returns sample CSV and metadata)
 studentsRouter.get('/import/template', authRequired, async (req: AuthedRequest, res) => {
@@ -413,5 +502,112 @@ studentsRouter.get('/:id/360', authRequired, async (req: AuthedRequest, res) => 
     trend, assignments, notes, meetings });
   } catch (e) {
     return res.status(500).json({ ok:false, error:'Failed to build profile' });
+  }
+});
+
+// POST /api/students/:id/claim  (mentor claims an unassigned student)
+studentsRouter.post('/:id/claim', authRequired, async (req: AuthedRequest, res) => {
+  if (!isMentor(req.user?.role) && !isAdmin(req.user?.role)) {
+    return res.status(403).json({ ok:false, error:'Forbidden' });
+  }
+  const { id } = req.params;
+  try {
+    const student = await prisma.student.findUnique({ where:{ id } });
+    if (!student) return res.status(404).json({ ok:false, error:'Not found' });
+    if (student.mentorId && student.mentorId !== req.user?.id && !isAdmin(req.user?.role)) {
+      return res.status(409).json({ ok:false, error:'Already assigned' });
+    }
+    if (student.mentorId === req.user?.id) {
+      return res.json({ ok:true, student:{ id: student.id, mentorId: student.mentorId } });
+    }
+    await prisma.student.update({ where:{ id }, data:{ mentorId: req.user?.id } });
+    return res.json({ ok:true, student:{ id, mentorId: req.user?.id } });
+  } catch (e:any) {
+    return res.status(500).json({ ok:false, error:'Claim failed', detail: e.message });
+  }
+});
+
+// POST /api/students/risk-snapshots/capture (admin only) - captures a snapshot for all students' current risk scores
+studentsRouter.post('/risk-snapshots/capture', authRequired, async (req: AuthedRequest, res) => {
+  if (!isAdmin(req.user?.role)) return res.status(403).json({ ok:false, error:'Forbidden' });
+  await ensureRiskSnapshotTable();
+  try {
+    const students = await prisma.student.findMany({ select:{ id:true, riskScore:true } });
+    const now = new Date();
+    let inserted = 0;
+    for (const s of students) {
+      if (s.riskScore == null) continue;
+      try {
+        await prisma.$executeRawUnsafe(`INSERT INTO "RiskSnapshot" (id, studentId, riskScore, createdAt, source) VALUES (?, ?, ?, ?, ?)`, crypto.randomUUID(), s.id, s.riskScore, now.toISOString(), 'manual_capture');
+        inserted++;
+      } catch {/* ignore per-row errors */}
+    }
+    return res.json({ ok:true, inserted, at: now.toISOString() });
+  } catch (e:any) {
+    return res.status(500).json({ ok:false, error:'Capture failed', detail:e.message });
+  }
+});
+
+// GET /api/students/risk-trend?days=30 - aggregated daily counts from snapshots (fallback synth if none)
+studentsRouter.get('/risk-trend', authRequired, async (req: AuthedRequest, res) => {
+  if (!(isAdmin(req.user?.role) || isMentor(req.user?.role) || isCounselor(req.user?.role))) {
+    return res.status(403).json({ ok:false, error:'Forbidden' });
+  }
+  await ensureRiskSnapshotTable();
+  const days = Math.min(120, Math.max(7, parseInt(String(req.query.days||'30'),10) || 30));
+  const since = new Date(Date.now() - days*24*3600*1000);
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>("SELECT studentId, riskScore, createdAt FROM 'RiskSnapshot' WHERE datetime(createdAt) >= datetime(?) ORDER BY datetime(createdAt) ASC", since.toISOString());
+    const byDay: Record<string,{ scores:number[] } & { high:number; medium:number; low:number }> = {} as any;
+    for (const r of rows) {
+      const d = (new Date(r.createdAt)).toISOString().split('T')[0];
+      if (!byDay[d]) byDay[d] = { scores:[], high:0, medium:0, low:0 };
+      const score = typeof r.riskScore === 'number'? r.riskScore : Number(r.riskScore);
+      if (!isNaN(score)) {
+        byDay[d].scores.push(score);
+        const tier = deriveRiskTierFor(score);
+        if (tier==='high') byDay[d].high++; else if (tier==='medium') byDay[d].medium++; else if (tier==='low') byDay[d].low++;
+      }
+    }
+    // If no snapshots, synthesize from current distribution (graceful fallback)
+    if (!Object.keys(byDay).length) {
+      const students = await prisma.student.findMany({ select:{ riskScore:true } });
+      const today = new Date();
+      for (let i=days-1; i>=0; i--) {
+        const d = new Date(today.getTime() - i*24*3600*1000).toISOString().split('T')[0];
+        let high=0, medium=0, low=0; const scores:number[]=[];
+        for (const s of students) {
+          const base = s.riskScore ?? 0.45;
+          const pseudo = Math.max(0, Math.min(1, base + Math.sin((i+1)*0.35 + base*2) * 0.07 - i*0.0005));
+          scores.push(pseudo);
+          const tier = deriveRiskTierFor(pseudo);
+          if (tier==='high') high++; else if (tier==='medium') medium++; else if (tier==='low') low++;
+        }
+        byDay[d] = { scores, high, medium, low } as any;
+      }
+    }
+    const trend = Object.keys(byDay).sort().map(date => {
+      const entry = byDay[date];
+      const avgRisk = entry.scores.length? entry.scores.reduce((a,b)=> a+b,0)/entry.scores.length : null;
+      return { date, avgRisk, highCount: entry.high, mediumCount: entry.medium, lowCount: entry.low };
+    });
+    return res.json({ ok:true, trend });
+  } catch (e:any) {
+    return res.status(500).json({ ok:false, error:'Trend build failed', detail:e.message });
+  }
+});
+
+// PATCH /api/students/:id/assign-mentor  { mentorId: string|null }
+studentsRouter.patch('/:id/assign-mentor', authRequired, async (req: AuthedRequest, res) => {
+  if (!isAdmin(req.user?.role)) return res.status(403).json({ ok:false, error:'Forbidden' });
+  const { id } = req.params; const { mentorId } = req.body || {};
+  try {
+    const student = await prisma.student.findUnique({ where:{ id } });
+    if (!student) return res.status(404).json({ ok:false, error:'Not found' });
+    // Accept null to unassign
+    await prisma.student.update({ where:{ id }, data:{ mentorId: mentorId || null } });
+    return res.json({ ok:true, student:{ id, mentorId: mentorId || null } });
+  } catch(e:any) {
+    return res.status(500).json({ ok:false, error:'Mentor assign failed', detail:e.message });
   }
 });

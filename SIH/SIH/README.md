@@ -292,6 +292,124 @@ PUT deactivates old active rows and inserts new row with incremented version.
 
 ---
 
+## Risk Snapshots (New)
+
+Every time academic indicators are updated (PATCH /api/students/:id) or a student is imported with an inferred or explicit risk score, a point-in-time entry is written to the lightweight `RiskSnapshot` table (raw SQL ensured at runtime). This enables future historical trend charts without needing to backfill from logs.
+
+Schema (SQLite raw):
+```
+id TEXT PK
+studentId TEXT (FK Student)
+riskScore REAL
+createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+source TEXT ("academic_update" | "import")
+```
+
+Current Uses:
+- Audit / validation via tests (riskSnapshot.test.ts)
+- Basis for future real trend endpoint (currently trend in 360 view is synthetic placeholder)
+
+Planned Enhancements:
+- Add index on (studentId, createdAt) (already ensured)
+- Expose `/api/students/:id/risk-history` returning chronological snapshots
+- Optional retention or compression policy.
+
+---
+
+## CSV Import: Academic Metrics & Risk Inference (New)
+
+The student import endpoint (`POST /api/students/import`) now accepts extended academic columns. On dry run it validates and, if `riskScore` is missing, infers a provisional risk using the active risk model weights. On real import it persists academic metrics to dynamic columns (ensured at runtime if migration hasn’t applied) and writes a `RiskSnapshot` if a risk score (explicit or inferred) exists.
+
+Supported Columns (header names):
+| Column | Required | Notes |
+|--------|----------|-------|
+| studentCode | yes | Unique institutional ID |
+| name | yes | Student full name |
+| email | yes | Lowercased during import |
+| program | no | Free-text program/stream |
+| year | no | Integer 0–12 |
+| attendancePercent | no | 0–100 number |
+| cgpa | no | 0–10 number |
+| assignmentsCompleted | no | Integer >=0 |
+| assignmentsTotal | no | Integer >=0 (used with assignmentsCompleted) |
+| subjects | no | Comma or semicolon separated list (stored JSON) |
+| mentorAcademicNote | no | Text (keyword scanned for penalty) |
+| riskScore | no | 0–1 decimal; if absent risk is inferred when enough metrics present |
+
+Risk Inference Heuristic (import):
+```
+attComp = 1 - attendancePercent/100 (else 0.5 if missing)
+gpaComp = 1 - cgpa/10 (else 0.5)
+assignComp = 1 - (assignmentsCompleted / max(1, assignmentsTotal)) (else 0.5)
+notePenalty = 1 if mentorAcademicNote matches /(fail|risk|struggl|drop|absent)/i else 0
+weighted = attComp*w.attendance + gpaComp*w.gpa + assignComp*w.assignments + notePenalty*w.notes
+riskScore = clamp(weighted / sum(weights), 0, 1)
+```
+Weights come from active `RiskModelConfig` (raw SQL table) or default fallback `{attendance:0.35,gpa:0.35,assignments:0.2,notes:0.1}`.
+
+Dry Run Behavior:
+- Returns inferred riskScore in `rows[]` for preview (not persisted).
+- Validation errors reported with line numbers; import must be re-run without `dryRun` to persist.
+
+Runtime Column Assurance:
+The backend auto-adds columns to `Student` (attendancePercent, cgpa, assignmentsCompleted, assignmentsTotal, subjectsJson, mentorAcademicNote, lastAcademicUpdate) if they are missing (SQLite `ALTER TABLE`).
+
+Testing:
+- `tests/import.academics.test.ts` covers dry-run inference & real persistence.
+
+---
+
+## Listing Students: includeUnassigned (Mentor/Counselor) (New)
+
+`GET /api/students?includeUnassigned=1` allows mentors and counselors to see both their assigned and currently unassigned students (filtering occurs after fetching to avoid changing existing pagination semantics). Without the flag they only see students where `mentorId` equals their user id.
+
+---
+
+## Continuous Integration (New)
+
+A minimal GitHub Actions workflow (`.github/workflows/ci.yml`) runs backend-node tests on push / pull request:
+```
+name: CI
+on: [push, pull_request]
+jobs:
+	backend-node:
+		runs-on: ubuntu-latest
+		steps:
+			- uses: actions/checkout@v4
+			- uses: actions/setup-node@v4
+				with:
+					node-version: 18
+			- run: npm ci --prefix PathKeeper/backend-node
+			- run: npm test --prefix PathKeeper/backend-node
+```
+
+Add a badge after initial green run:
+```
+![CI](https://github.com/<org>/<repo>/actions/workflows/ci.yml/badge.svg)
+```
+
+---
+
+## Updated Test Coverage (Delta)
+
+Added:
+- Risk snapshot insertion test (`riskSnapshot.test.ts`)
+- Academic import + risk inference test (`import.academics.test.ts`)
+
+Enhanced Confidence Areas:
+- Risk model config versioning & retrieval
+- Import validation & inference
+- Academic field update recalculations and snapshot emission
+
+Next Recommended Tests:
+- Student listing with includeUnassigned flag (mentor scope)
+- 360 endpoint includes academic fields
+- Negative keyword note penalty path on PATCH (explicit assertions)
+
+---
+
+---
+
 ## Academic Indicators & Mentor Editing
 Mentors (and admins) can update key academic engagement fields that feed directly into the dynamic risk score.
 

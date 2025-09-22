@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeRisk } from '../risk/riskUtil';
 import { useDarkMode } from '../theme/DarkModeContext';
-import { Box, Stack, Typography, Paper, Button, IconButton, Avatar, Chip, Divider, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Select, FormControl, InputLabel, CircularProgress, Snackbar, Alert } from '@mui/material';
+import { Box, Stack, Typography, Paper, Button, IconButton, Avatar, Chip, Divider, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Select, FormControl, InputLabel, CircularProgress, Snackbar, Alert, Table, TableHead, TableRow, TableCell, TableBody, TableContainer, TableSortLabel, Checkbox, Accordion, AccordionSummary, AccordionDetails } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useNavigate } from 'react-router-dom';
 import SpaceDashboardIcon from '@mui/icons-material/SpaceDashboard';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
@@ -14,7 +15,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import WarningRoundedIcon from '@mui/icons-material/WarningRounded';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend, BarChart, Bar } from 'recharts';
 import RiskBadge from '../components/RiskBadge';
 import StatCard from '../components/StatCard';
 import { useAuth } from '../auth/AuthContext';
@@ -28,7 +29,16 @@ import { API } from '../api';
 // Local synthetic calc removed in favor of shared util
 
 interface MentorStudent {
-  id: string; name: string; email: string; attendance: number; gpa: number; assignmentsSubmitted: number; lastExamScore: number; performanceHistory: { month: string; score: number }[]; risk:{ level:string; score:number };
+  id: string; name: string; email: string;
+  attendance: number; // maps backend attendancePercent
+  gpa: number; // maps backend cgpa
+  assignmentsSubmitted: number; // legacy local field (assignmentsCompleted)
+  assignmentsCompleted?: number; // real backend value
+  assignmentsTotal?: number; // real backend value
+  lastAcademicUpdate?: string | null; // ISO timestamp from backend
+  lastExamScore: number; // placeholder until backend provides exam scores
+  performanceHistory: { month: string; score: number }[];
+  risk:{ level:string; score:number };
 }
 
 // Local RiskBadge replaced with shared component
@@ -48,7 +58,7 @@ const PerformanceTrend: React.FC<{ data: { month:string; score:number }[] }> = (
   </Box>
 );
 
-const DashboardPage: React.FC<{ token:string; students: MentorStudent[]; onExport: () => void; exporting: boolean }> = ({ token, students, onExport, exporting }) => {
+const DashboardPage: React.FC<{ token:string; students: MentorStudent[]; onExport: () => void; exporting: boolean; onEdit:(s:MentorStudent)=>void }> = ({ token, students, onExport, exporting, onEdit }) => {
   const highRisk = students.filter(s => s.risk.level === 'High').length;
   const avgAttendance = students.length ? Math.round(students.reduce((acc,s)=> acc+s.attendance,0)/students.length) : 0;
   const [filter, setFilter] = useState<'All'|'High'|'Medium'|'Low'>('All');
@@ -62,6 +72,7 @@ const DashboardPage: React.FC<{ token:string; students: MentorStudent[]; onExpor
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg:string; sev:'success'|'error' }|null>(null);
+  const pushToast = (msg:string, sev:'success'|'error'='success') => setToast({ msg, sev });
   // Meetings state
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [meetingsLoading, setMeetingsLoading] = useState(false);
@@ -74,6 +85,7 @@ const DashboardPage: React.FC<{ token:string; students: MentorStudent[]; onExpor
   const [show360, setShow360] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [bulkNotifyOpen, setBulkNotifyOpen] = useState(false);
+  const [showMeetSection, setShowMeetSection] = useState(true);
 
   // Load playbooks & meetings on first modal open
   useEffect(()=> {
@@ -140,8 +152,13 @@ const DashboardPage: React.FC<{ token:string; students: MentorStudent[]; onExpor
   const sorted = [...filtered].sort((a,b)=> {
     if (sort==='name') return a.name.localeCompare(b.name);
     if (sort==='attendance') return b.attendance - a.attendance;
-    return b.risk.score - a.risk.score; // risk
+    return b.risk.score - a.risk.score; // risk default
   });
+  function handleSort(col: 'risk'|'name'|'attendance') {
+    if (sort === col) {
+      if (col === 'risk') setSort('name'); else if (col==='name') setSort('attendance'); else setSort('risk');
+    } else setSort(col);
+  }
 
   const toggleSelect = (id:string) => {
     setSelected(prev => {
@@ -175,6 +192,34 @@ const DashboardPage: React.FC<{ token:string; students: MentorStudent[]; onExpor
     } catch(e:any) { setToast({ msg: e.message || 'Bulk failed', sev:'error' }); }
     finally { setBulkSaving(false); }
   };
+  // Aggregate risk counts for charts
+  const riskCounts = students.reduce((acc:Record<string,number>, s)=> { acc[s.risk.level] = (acc[s.risk.level]||0)+1; return acc; }, {} as Record<string,number>);
+  const totalRisk = (riskCounts['High']||0)+(riskCounts['Medium']||0)+(riskCounts['Low']||0);
+  const rawDist = [
+    { name:'High', value:riskCounts['High']||0 },
+    { name:'Medium', value:riskCounts['Medium']||0 },
+    { name:'Low', value:riskCounts['Low']||0 }
+  ];
+  const [showExpanded, setShowExpanded] = React.useState<boolean>(()=> {
+    try { const v = localStorage.getItem('mentor.dist.showExpanded'); return v === '1'; } catch { return false; }
+  });
+  const TINY_THRESHOLD = 0.03; // 3%
+  const tiny = rawDist.filter(d=> totalRisk>0 && d.value/totalRisk < TINY_THRESHOLD && d.value>0);
+  const nonTiny = rawDist.filter(d=> !tiny.includes(d));
+  const otherValue = tiny.reduce((a,b)=> a+b.value, 0);
+  const mergedData = otherValue && !showExpanded ? [...nonTiny, { name:'Other', value:otherValue, __other:true, children: tiny }] : rawDist;
+  const pieData = mergedData.filter(d=> d.value>0);
+  // sort by count descending for display consistency
+  const pieDataSorted = [...pieData].sort((a,b)=> b.value - a.value);
+  const [distMode, setDistMode] = React.useState<'pie'|'bar'>(()=> {
+    try { const v = localStorage.getItem('mentor.dist.mode'); return (v==='bar'||v==='pie') ? v : 'pie'; } catch { return 'pie'; }
+  });
+  useEffect(()=> { try { localStorage.setItem('mentor.dist.mode', distMode); } catch {} }, [distMode]);
+  useEffect(()=> { try { localStorage.setItem('mentor.dist.showExpanded', showExpanded? '1':'0'); } catch {} }, [showExpanded]);
+  const COLORS: Record<string,string> = { High:'#c62828', Medium:'#ed6c02', Low:'#2e7d32' };
+  // placeholder declarations before component for types (will be reassigned inside component)
+  let trendData: any[] = [] as any; let trendLoading = false; let trendError: string|undefined = undefined;
+
   return (
     <Stack spacing={4}>
       <Stack direction={{ xs:'column', md:'row' }} alignItems={{ xs:'flex-start', md:'center' }} justifyContent="space-between" spacing={2}>
@@ -200,43 +245,235 @@ const DashboardPage: React.FC<{ token:string; students: MentorStudent[]; onExpor
           </Button>
         </Stack>
       </Stack>
-      <Box sx={{ display:'grid', gap:3, gridTemplateColumns:{ xs:'repeat(auto-fill,minmax(240px,1fr))', md:'repeat(auto-fill,minmax(260px,1fr))' } }}>
-        {sorted.map(s => (
-          <Paper key={s.id} elevation={0} sx={{ p:2, border: t=>`1px solid ${selected.has(s.id)? t.palette.primary.main : t.palette.divider}`, borderRadius:3, display:'flex', flexDirection:'column', gap:1.25, position:'relative' }}>
-            {selectMode && (
-              <Box sx={{ position:'absolute', top:8, left:8 }}>
-                <input type="checkbox" checked={selected.has(s.id)} onChange={()=> toggleSelect(s.id)} />
-              </Box>
+      <Box sx={{ display:'grid', gap:3, gridTemplateColumns:{ xs:'1fr', lg:'2fr 1fr' } }}>
+        <Paper elevation={0} sx={{ p:2, border: t=>`1px solid ${t.palette.divider}`, borderRadius:3, display:'flex', flexDirection:'column', gap:2 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between">
+            <Typography variant="subtitle1" fontWeight={600}>Risk Distribution</Typography>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Button size="small" variant="outlined" onClick={()=> {
+                try {
+                  const total = pieDataSorted.reduce((a,b)=> a+b.value,0) || 1;
+                  const lines = ['Risk,Count,Percent'];
+                  pieDataSorted.forEach(d=> { lines.push(`${d.name},${d.value},${((d.value/total)*100).toFixed(2)}%`); });
+                  const csv = lines.join('\n');
+                  const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a'); a.href = url; a.download = 'risk_distribution.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                  pushToast('Exported distribution CSV');
+                } catch { pushToast('Export failed','error'); }
+              }}>Export CSV</Button>
+              {tiny.length>0 && <Button size="small" variant="text" onClick={()=> { setShowExpanded(s=> !s); pushToast(showExpanded? 'Merged small slices' : 'Expanded all slices'); }} sx={{ textTransform:'none' }}>
+                {showExpanded? 'Merge small' : 'Expand all'}
+              </Button>}
+              <Button size="small" variant="text" onClick={()=> { setDistMode(m=> m==='pie'?'bar':'pie'); pushToast(`Switched to ${distMode==='pie'? 'bar':'pie'} view`); }} sx={{ textTransform:'none' }}>
+                {distMode==='pie'? 'Bar' : 'Pie'} view
+              </Button>
+            </Stack>
+          </Stack>
+          {distMode==='pie' ? (
+            <Box sx={{ height:220, position:'relative' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieDataSorted}
+                    dataKey="value"
+                    nameKey="name"
+                    outerRadius={90}
+                    innerRadius={52}
+                    paddingAngle={pieDataSorted.length > 1 ? 3 : 0}
+                    isAnimationActive={false}
+                  >
+                    {pieDataSorted.map((p,i)=> <Cell key={i} fill={COLORS[p.name] || '#607d8b'} stroke="#fff" strokeWidth={1} />)}
+                  </Pie>
+                  <ReTooltip formatter={(val:any, _n:any, entry:any)=> {
+                    const total = pieDataSorted.reduce((a,b)=> a+b.value, 0) || 1;
+                    const pct = ((entry.value/total)*100).toFixed(1)+'%';
+                    return [`${entry.value} (${pct})`, entry.payload.name];
+                  }} />
+                  <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" fontSize={13} fill="#555">
+                    {students.length? `${students.length}` : '0'}
+                    <tspan x="50%" dy="14" fontSize={11} fill="#777">students</tspan>
+                  </text>
+                </PieChart>
+              </ResponsiveContainer>
+              {!students.length && <Box sx={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
+                <Typography variant="caption" color="text.secondary">No risk data</Typography>
+              </Box>}
+            </Box>
+          ) : (
+            <Box sx={{ height:220, position:'relative', px:1 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={pieDataSorted} layout="vertical" margin={{ top:5, right:20, left:30, bottom:5 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" allowDecimals={false} hide domain={[0, Math.max(...pieDataSorted.map(d=> d.value), 1)]} />
+                  <YAxis type="category" dataKey="name" width={70} />
+                  <ReTooltip formatter={(val:any, _n:any, entry:any)=> {
+                    const total = pieDataSorted.reduce((a,b)=> a+b.value, 0) || 1;
+                    const pct = ((entry.value/total)*100).toFixed(1)+'%';
+                    return [`${entry.value} (${pct})`, entry.payload.name];
+                  }} />
+                  <Bar dataKey="value" radius={[4,4,4,4]}>
+                    {pieDataSorted.map((p,i)=> <Cell key={i} fill={COLORS[p.name] || '#607d8b'} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </Box>
+          )}
+          <Box sx={{ display:'flex', gap:1, flexWrap:'wrap', mt:1 }}>
+            {pieDataSorted.map(item => {
+              const total = pieDataSorted.reduce((a,b)=> a+b.value, 0) || 1;
+              const pct = ((item.value/total)*100).toFixed(1);
+              const isOther = (item as any).__other;
+              return (
+                <Box key={item.name} sx={{ display:'flex', alignItems:'center', gap:0.75, px:1, py:0.5, borderRadius:2, bgcolor: 'background.paper', border: t=>`1px solid ${t.palette.divider}` }}>
+                  <Box sx={{ width:10, height:10, borderRadius:0.5, bgcolor: COLORS[item.name] || '#546e7a' }} />
+                  <Typography variant="caption" sx={{ fontWeight:600 }}>{item.name}</Typography>
+                  <Typography variant="caption" color="text.secondary">{item.value} ({pct}%)</Typography>
+                  {isOther && !showExpanded && <Typography variant="caption" color="text.secondary">{`(${(item as any).children.length} small)`}</Typography>}
+                </Box>
+              );
+            })}
+          </Box>
+          <Divider />
+          <Typography variant="subtitle1" fontWeight={600}>Risk Trend</Typography>
+          <Box sx={{ height:240 }}>
+            {trendError && <Typography variant="caption" color="error">{trendError}</Typography>}
+            {!trendError && (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData} margin={{ top:5, right:20, left:0, bottom:5 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="period" />
+                  <YAxis allowDecimals={false} />
+                  <ReTooltip formatter={(v:any, n:any)=> [v, n]} labelFormatter={(l:string)=> `Date: ${l}`} />
+                  <Line type="monotone" dataKey="High" stroke={COLORS.High} strokeWidth={2} />
+                  <Line type="monotone" dataKey="Medium" stroke={COLORS.Medium} strokeWidth={2} />
+                  <Line type="monotone" dataKey="Low" stroke={COLORS.Low} strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
             )}
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <Avatar sx={{ bgcolor:'primary.main', width:46, height:46 }}>{s.name.charAt(0)}</Avatar>
-              <Box sx={{ minWidth:0, flex:1 }}>
-                <Typography variant="subtitle2" fontWeight={600} noWrap>{s.name}</Typography>
-                <Typography variant="caption" color="text.secondary" noWrap>{s.id}</Typography>
-              </Box>
-              <RiskBadge tier={s.risk.level as any} />
-            </Stack>
-            <Stack direction="row" spacing={1} sx={{ flexWrap:'wrap' }}>
-              <Chip size="small" label={`Att ${s.attendance}%`} />
-              <Chip size="small" label={`GPA ${s.gpa.toFixed(1)}`} />
-              <Chip size="small" label={`Assign ${s.assignmentsSubmitted}`} />
-            </Stack>
-            {!selectMode && <Button size="small" variant="contained" onClick={()=> setQuick(s)} sx={{ mt:0.5 }}>Quick Action</Button>}
-            {selectMode && <Button size="small" variant={selected.has(s.id)? 'contained':'outlined'} onClick={()=> toggleSelect(s.id)} sx={{ mt:0.5 }}>{selected.has(s.id)? 'Selected':'Select'}</Button>}
-          </Paper>
-        ))}
-        {!sorted.length && <Typography variant="body2" color="text.secondary">No students match filter.</Typography>}
+            {trendLoading && <Typography variant="caption" color="text.secondary">Loading trend...</Typography>}
+          </Box>
+        </Paper>
+        <Paper elevation={0} sx={{ p:2, border: t=>`1px solid ${t.palette.divider}`, borderRadius:3, display:'flex', flexDirection:'column', gap:1.2 }}>
+          <Typography variant="subtitle1" fontWeight={600}>Summary</Typography>
+          <StatCard title="Assigned Students" value={students.length} icon={<GroupIcon fontSize="small" />} />
+          <StatCard title="High-Risk" value={highRisk} change="Needs attention" icon={<WarningRoundedIcon fontSize="small" />} />
+          <StatCard title="Avg. Attendance" value={`${avgAttendance}%`} change="Cohort" icon={<CheckCircleOutlineIcon fontSize="small" />} />
+          <Typography variant="caption" color="text.secondary">Charts are synthetic until historical snapshots endpoint is live.</Typography>
+        </Paper>
       </Box>
-      <Paper elevation={0} sx={{ p:2, border: t=>`1px solid ${t.palette.divider}`, borderRadius:3, display:'flex', gap:2, flexWrap:'wrap' }}>
-        <StatCard title="Assigned Students" value={students.length} icon={<GroupIcon fontSize="small" />} />
-        <StatCard title="High-Risk" value={highRisk} change="Needs attention" icon={<WarningRoundedIcon fontSize="small" />} />
-        <StatCard title="Avg. Attendance" value={`${avgAttendance}%`} change="Cohort" icon={<CheckCircleOutlineIcon fontSize="small" />} />
+      <Paper elevation={0} sx={{ p:1.5, border: t=>`1px solid ${t.palette.divider}`, borderRadius:3 }}>
+        <TableContainer>
+          <Table size="small" stickyHeader>
+            <TableHead>
+              <TableRow>
+                {selectMode && <TableCell padding="checkbox"><Checkbox size="small" indeterminate={selected.size>0 && selected.size<sorted.length} checked={selected.size>0 && selected.size===sorted.length} onChange={(e)=> {
+                  const checked = e.target.checked; setSelected(checked ? new Set(sorted.map(s=> s.id)) : new Set());
+                }} /></TableCell>}
+                <TableCell sortDirection={sort==='name'? 'asc':false} sx={{ minWidth:180 }}>
+                  <TableSortLabel active={sort==='name'} direction={sort==='name'? 'asc':'asc'} onClick={()=> handleSort('name')}>Name</TableSortLabel>
+                </TableCell>
+                <TableCell>Email / ID</TableCell>
+                <TableCell sortDirection={sort==='risk'? 'asc':false}>
+                  <TableSortLabel active={sort==='risk'} direction='asc' onClick={()=> handleSort('risk')}>Risk</TableSortLabel>
+                </TableCell>
+                <TableCell sortDirection={sort==='attendance'? 'asc':false}>
+                  <TableSortLabel active={sort==='attendance'} direction='asc' onClick={()=> handleSort('attendance')}>Attendance%</TableSortLabel>
+                </TableCell>
+                <TableCell>GPA</TableCell>
+                <TableCell>Assignments</TableCell>
+                <TableCell>Updated</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {sorted.map(s => (
+                <TableRow key={s.id} hover selected={selected.has(s.id)}>
+                  {selectMode && <TableCell padding="checkbox"><Checkbox size="small" checked={selected.has(s.id)} onChange={()=> toggleSelect(s.id)} /></TableCell>}
+                  <TableCell sx={{ maxWidth:180 }}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Avatar sx={{ bgcolor:'primary.main', width:32, height:32 }}>{s.name.charAt(0)}</Avatar>
+                      <Box sx={{ minWidth:0 }}>
+                        <Typography variant="body2" fontWeight={600} noWrap>{s.name}</Typography>
+                      </Box>
+                    </Stack>
+                  </TableCell>
+                  <TableCell sx={{ maxWidth:260 }}>
+                    <Typography variant="caption" color="text.secondary" noWrap>{s.email}</Typography><br />
+                    <Typography variant="caption" color="text.secondary" noWrap>{s.id}</Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <RiskBadge tier={s.risk.level as any} />
+                      <Typography variant="caption" color="text.secondary">{(s.risk.score*100).toFixed(0)}</Typography>
+                    </Stack>
+                  </TableCell>
+                  <TableCell>{s.attendance}%</TableCell>
+                  <TableCell>{s.gpa.toFixed(1)}</TableCell>
+                  <TableCell>
+                    {(() => {
+                      const comp = s.assignmentsCompleted ?? s.assignmentsSubmitted;
+                      const tot = s.assignmentsTotal;
+                      if (typeof tot === 'number' && tot > 0) {
+                        const pct = Math.round((comp/Math.max(1,tot))*100);
+                        return `${comp}/${tot} (${pct}%)`;
+                      }
+                      return comp;
+                    })()}
+                  </TableCell>
+                  <TableCell>
+                    {(() => {
+                      const ts = s.lastAcademicUpdate ? new Date(s.lastAcademicUpdate) : null;
+                      if (!ts) return <Typography variant="caption" color="text.secondary">—</Typography>;
+                      const ageDays = Math.floor((Date.now() - ts.getTime())/86400000);
+                      const stale = ageDays > 30;
+                      return <Chip size="small" label={ageDays===0? 'Today': ageDays===1? '1d': ageDays+'d'} color={stale? 'warning':'default'} variant={stale? 'filled':'outlined'} />;
+                    })()}
+                  </TableCell>
+                  <TableCell align="right">
+                    {!selectMode && <Stack direction="row" spacing={1} justifyContent="flex-end">
+                      <Button size="small" variant="outlined" onClick={()=> setQuick(s)}>Quick</Button>
+                      <Button size="small" variant="text" onClick={()=> onEdit(s)}>Edit</Button>
+                    </Stack>}
+                    {selectMode && <Button size="small" variant={selected.has(s.id)? 'contained':'outlined'} onClick={()=> toggleSelect(s.id)}>{selected.has(s.id)? '✓':'Select'}</Button>}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!sorted.length && (
+                <TableRow>
+                  <TableCell colSpan={selectMode? 8:7}>
+                    <Typography variant="body2" color="text.secondary">No students match filter.</Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </Paper>
-      <Dialog open={!!quick} onClose={()=> { if(!saving) setQuick(null); }} fullWidth maxWidth="sm">
-        <DialogTitle>Quick Action{quick? `: ${quick.name}`:''}</DialogTitle>
-        <DialogContent sx={{ display:'flex', flexDirection:'column', gap:2 }}>
+      <Dialog open={!!quick} onClose={()=> { if(!saving){ setQuick(null); setNote(''); setPlaybookId(''); } }} fullWidth maxWidth="sm" scroll="paper">
+        <DialogTitle sx={{ pb:1 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between">
+            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth:0, flex:1 }}>
+              {quick && <Avatar sx={{ width:40, height:40, bgcolor:'primary.main' }}>{quick.name.charAt(0)}</Avatar>}
+              <Box sx={{ minWidth:0 }}>
+                <Typography variant="subtitle1" fontWeight={700} noWrap>Quick Action{quick? `: ${quick.name}`:''}</Typography>
+                {quick && <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mt:0.25 }}>
+                  <Stack direction="row" spacing={0.5} alignItems="center">
+                    <RiskBadge tier={quick.risk.level as any} />
+                    <Typography variant="caption" color="text.secondary">{(quick.risk.score*100).toFixed(0)}</Typography>
+                  </Stack>
+                  <Chip size="small" label={`Att ${quick.attendance}%`} />
+                  <Chip size="small" label={`GPA ${quick.gpa.toFixed(1)}`} />
+                  <Chip size="small" label={`Assign ${quick.assignmentsSubmitted}`} />
+                </Stack>}
+              </Box>
+            </Stack>
+            {quick && <Button size="small" onClick={()=> setShow360(true)} variant="outlined">360°</Button>}
+          </Stack>
+        </DialogTitle>
+        <DialogContent sx={{ display:'flex', flexDirection:'column', gap:2, maxHeight:'65vh', overflowY:'auto', pt:0 }}>
           <Typography variant="body2" color="text.secondary">Assign a playbook and/or add a note for this student.</Typography>
-          <TextField label="Note" value={note} onChange={e=> setNote(e.target.value)} placeholder="Observation / planned intervention" multiline minRows={3} fullWidth disabled={saving} />
+          <TextField label="Note" value={note} onChange={e=> setNote(e.target.value)} placeholder="Observation / planned intervention" multiline minRows={3} fullWidth disabled={saving} autoFocus onKeyDown={(e)=> { if(e.ctrlKey && e.key==='Enter' && !saving && (playbookId || note.trim())) { handleSaveQuick(); } }} />
           <FormControl fullWidth size="small" disabled={saving || playbooksLoading}>
             <InputLabel>Playbook</InputLabel>
             <Select label="Playbook" value={playbookId} onChange={e=> setPlaybookId(e.target.value)} renderValue={(val)=> {
@@ -249,34 +486,39 @@ const DashboardPage: React.FC<{ token:string; students: MentorStudent[]; onExpor
             </Select>
           </FormControl>
           {playbooksLoading && <Stack direction="row" spacing={1} alignItems="center"><CircularProgress size={16} /><Typography variant="caption">Loading playbooks…</Typography></Stack>}
-          <Divider sx={{ my:1.5 }} />
-            <Typography variant="subtitle2">Schedule Meeting</Typography>
-            <Stack direction={{ xs:'column', sm:'row' }} spacing={1}>
-              <TextField label="Title" value={mtTitle} onChange={e=> setMtTitle(e.target.value)} fullWidth size="small" disabled={saving} />
-              <TextField label="Date" type="date" value={mtDate} onChange={e=> setMtDate(e.target.value)} InputLabelProps={{ shrink:true }} size="small" disabled={saving} />
-              <TextField label="Start" type="time" value={mtStart} onChange={e=> setMtStart(e.target.value)} InputLabelProps={{ shrink:true }} size="small" disabled={saving} />
-              <TextField label="Duration" type="number" value={mtDuration} onChange={e=> setMtDuration(Math.max(5,Math.min(480, Number(e.target.value)||30)))} size="small" disabled={saving} sx={{ maxWidth:120 }} />
-            </Stack>
-            <Stack direction={{ xs:'column', sm:'row' }} spacing={1}>
-              <TextField label="Location" value={mtLocation} onChange={e=> setMtLocation(e.target.value)} fullWidth size="small" disabled={saving} />
-              <TextField label="Notes" value={mtNotes} onChange={e=> setMtNotes(e.target.value)} fullWidth size="small" disabled={saving} />
-            </Stack>
-            <Button size="small" variant="outlined" onClick={handleSchedule} disabled={saving || !mtTitle || !mtDate || !mtStart}>Schedule</Button>
-            <Stack spacing={1} sx={{ maxHeight:160, overflowY:'auto' }}>
-              <Typography variant="caption" color="text.secondary">Upcoming / Recent</Typography>
-              {meetingsLoading && <Stack direction="row" spacing={1} alignItems="center"><CircularProgress size={14} /><Typography variant="caption">Loading meetings…</Typography></Stack>}
-              {!meetingsLoading && meetings.filter(m=> m.status!=='cancelled').slice(0,4).map(m => (
-                <Paper key={m.id} variant="outlined" sx={{ p:0.75, display:'flex', flexDirection:'column', gap:0.25 }}>
-                  <Typography variant="caption" sx={{ fontWeight:600 }}>{m.title}</Typography>
-                  <Typography variant="caption" color="text.secondary">{new Date(m.startsAt).toLocaleString()} ({Math.round((new Date(m.endsAt).getTime()-new Date(m.startsAt).getTime())/60000)}m)</Typography>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Chip size="small" label={m.status} color={m.status==='scheduled'? 'info': (m.status==='cancelled'?'default':'success')} />
-                    {m.status==='scheduled' && <Button size="small" onClick={()=> handleCancelMeeting(m.id)} disabled={saving}>Cancel</Button>}
-                  </Stack>
-                </Paper>
-              ))}
-              {!meetingsLoading && meetings.filter(m=> m.status!=='cancelled').length===0 && <Typography variant="caption" color="text.secondary">No meetings</Typography>}
-            </Stack>
+          <Accordion disableGutters elevation={0} expanded={showMeetSection} onChange={()=> setShowMeetSection(s=> !s)} sx={{ bgcolor:'transparent', border:'1px solid', borderColor: t=> t.palette.divider, borderRadius:2, '&:before':{ display:'none' } }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography variant="subtitle2">Schedule Meeting</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Stack direction={{ xs:'column', sm:'row' }} spacing={1} mb={1.2}>
+                <TextField label="Title" value={mtTitle} onChange={e=> setMtTitle(e.target.value)} fullWidth size="small" disabled={saving} />
+                <TextField label="Date" type="date" value={mtDate} onChange={e=> setMtDate(e.target.value)} InputLabelProps={{ shrink:true }} size="small" disabled={saving} />
+                <TextField label="Start" type="time" value={mtStart} onChange={e=> setMtStart(e.target.value)} InputLabelProps={{ shrink:true }} size="small" disabled={saving} />
+                <TextField label="Duration" type="number" value={mtDuration} onChange={e=> setMtDuration(Math.max(5,Math.min(480, Number(e.target.value)||30)))} size="small" disabled={saving} sx={{ maxWidth:120 }} />
+              </Stack>
+              <Stack direction={{ xs:'column', sm:'row' }} spacing={1} mb={1.2}>
+                <TextField label="Location" value={mtLocation} onChange={e=> setMtLocation(e.target.value)} fullWidth size="small" disabled={saving} />
+                <TextField label="Notes" value={mtNotes} onChange={e=> setMtNotes(e.target.value)} fullWidth size="small" disabled={saving} />
+              </Stack>
+              <Button size="small" variant="outlined" onClick={handleSchedule} disabled={saving || !mtTitle || !mtDate || !mtStart} sx={{ mb:1 }}>Schedule</Button>
+              <Stack spacing={1} sx={{ maxHeight:160, overflowY:'auto' }}>
+                <Typography variant="caption" color="text.secondary">Upcoming / Recent</Typography>
+                {meetingsLoading && <Stack direction="row" spacing={1} alignItems="center"><CircularProgress size={14} /><Typography variant="caption">Loading meetings…</Typography></Stack>}
+                {!meetingsLoading && meetings.filter(m=> m.status!=='cancelled').slice(0,4).map(m => (
+                  <Paper key={m.id} variant="outlined" sx={{ p:0.75, display:'flex', flexDirection:'column', gap:0.25 }}>
+                    <Typography variant="caption" sx={{ fontWeight:600 }}>{m.title}</Typography>
+                    <Typography variant="caption" color="text.secondary">{new Date(m.startsAt).toLocaleString()} ({Math.round((new Date(m.endsAt).getTime()-new Date(m.startsAt).getTime())/60000)}m)</Typography>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Chip size="small" label={m.status} color={m.status==='scheduled'? 'info': (m.status==='cancelled'?'default':'success')} />
+                      {m.status==='scheduled' && <Button size="small" onClick={()=> handleCancelMeeting(m.id)} disabled={saving}>Cancel</Button>}
+                    </Stack>
+                  </Paper>
+                ))}
+                {!meetingsLoading && meetings.filter(m=> m.status!=='cancelled').length===0 && <Typography variant="caption" color="text.secondary">No meetings</Typography>}
+              </Stack>
+            </AccordionDetails>
+          </Accordion>
         </DialogContent>
         <DialogActions>
           <Button onClick={()=> setShow360(true)} disabled={!quick || saving}>360° View</Button>
@@ -306,8 +548,8 @@ const DashboardPage: React.FC<{ token:string; students: MentorStudent[]; onExpor
         </Paper>
       )}
       <NotificationModal open={bulkNotifyOpen} onClose={()=> setBulkNotifyOpen(false)} token={token} studentIds={Array.from(selected)} />
-      <Snackbar open={!!toast} autoHideDuration={3000} onClose={()=> setToast(null)} anchorOrigin={{ vertical:'bottom', horizontal:'center' }}>
-        {toast && <Alert severity={toast.sev} onClose={()=> setToast(null)} variant="filled">{toast.msg}</Alert>}
+      <Snackbar open={!!toast} autoHideDuration={3200} onClose={()=> setToast(null)} anchorOrigin={{ vertical:'bottom', horizontal:'center' }}>
+        <Alert severity={toast?.sev || 'success'} onClose={()=> setToast(null)} variant="filled">{toast?.msg}</Alert>
       </Snackbar>
     </Stack>
   );
@@ -357,19 +599,51 @@ const MentorApp: React.FC = () => {
 
   const synthPerformance = (base:number) => [ 'Jan','Feb','Mar','Apr','May','Jun' ].map((m,i)=> ({ month:m, score: Math.max(40, Math.min(100, base + Math.sin(i+1)*8 - i*2)) }));
 
+  // Real risk trend fetched from backend snapshots endpoint
+  const [trendData, setTrendData] = useState<any[]>([]);
+  const [trendLoading, setTrendLoading] = useState(false);
+  const [trendError, setTrendError] = useState<string|undefined>();
+  useEffect(()=> {
+    if(!session?.token) return;
+    let active = true;
+    async function loadTrend() {
+      setTrendLoading(true); setTrendError(undefined);
+      try {
+  const r = await fetch('/api/students/risk-trend?days=30', { headers:{ Authorization:`Bearer ${session?.token || ''}` }});
+        if(!r.ok) throw new Error(`Trend failed (${r.status})`);
+        const j = await r.json();
+        if(!j.ok) throw new Error(j.error || 'Trend failed');
+        if (!active) return;
+        const mapped = (j.trend || []).map((d:any)=> ({
+          period: d.date.slice(5),
+          High: d.highCount,
+          Medium: d.mediumCount,
+          Low: d.lowCount,
+          avgRisk: d.avgRisk
+        }));
+        setTrendData(mapped);
+      } catch(e:any) {
+        if (active) setTrendError(e.message || 'Failed loading risk trend');
+      } finally { if (active) setTrendLoading(false); }
+    }
+    loadTrend();
+    return ()=> { active = false; };
+  }, [session?.token]);
+
   const fetchStudents = useCallback(()=> {
     if (!session?.token) return;
     setLoading(true); setErr(undefined);
-    fetch(`${API.students}?page=1&pageSize=40`, { headers: { Authorization: `Bearer ${session.token}` } })
+  fetch(`${API.students}?page=1&pageSize=40&includeUnassigned=1`, { headers: { Authorization: `Bearer ${session.token}` } })
       .then(r=> { if(!r.ok) throw new Error(`Status ${r.status}`); return r.json(); })
       .then(json => {
         const raw = json.data || json.students || [];
         const mapped: MentorStudent[] = raw.map((s:any,i:number)=> {
-          // Synthetic academic metrics (placeholders until real fields exist)
-          const attendance = 65 + ((i*19)%30);
-          const gpa = 2.2 + ((i*7)%15)/10; // 2.2 - 3.7
-          const assignmentsSubmitted = 55 + ((i*11)%45);
-          const lastExamScore = 50 + ((i*13)%50);
+          const attendance = typeof s.attendancePercent === 'number' ? s.attendancePercent : 0;
+          const gpa = typeof s.cgpa === 'number' ? s.cgpa : 0;
+          const assignmentsCompleted = typeof s.assignmentsCompleted === 'number' ? s.assignmentsCompleted : 0;
+          const assignmentsTotal = typeof s.assignmentsTotal === 'number' ? s.assignmentsTotal : 0;
+          const assignmentsSubmitted = assignmentsCompleted; // legacy naming in UI
+          const lastExamScore = 0; // not provided by backend yet
           const norm = normalizeRisk({ backendScore: s.riskScore, backendTier: s.riskTier, fallbackMetrics: { attendance, gpa, assignmentsSubmitted } });
           return {
             id: s.id || `mstu-${i}`,
@@ -378,10 +652,16 @@ const MentorApp: React.FC = () => {
             attendance,
             gpa,
             assignmentsSubmitted,
+            lastAcademicUpdate: s.lastAcademicUpdate || null,
             lastExamScore,
             performanceHistory: synthPerformance(60 + ((i*5)%30)),
-            risk: { level: norm.level, score: norm.score ?? 0 }
-          };
+            risk: { level: norm.level, score: norm.score ?? 0 },
+            // extra raw metrics for future inline editing
+            // @ts-ignore
+            assignmentsTotal,
+            // @ts-ignore
+            assignmentsCompleted
+          } as MentorStudent & { assignmentsTotal:number; assignmentsCompleted:number };
         });
         setStudents(mapped);
       })
@@ -392,7 +672,7 @@ const MentorApp: React.FC = () => {
   useEffect(()=> { fetchStudents(); }, [fetchStudents]);
 
   function buildCsv(rows: MentorStudent[]): string {
-    const header = ['id','name','email','attendance','gpa','assignmentsSubmitted','lastExamScore','riskLevel','riskScore'];
+  const header = ['id','name','email','attendancePercent','cgpa','assignmentsCompleted','assignmentsTotal','riskLevel','riskScore'];
     const escape = (v:any)=> {
       if (v == null) return '';
       const s = String(v);
@@ -406,8 +686,10 @@ const MentorApp: React.FC = () => {
         r.email,
         r.attendance,
         r.gpa.toFixed(2),
-        r.assignmentsSubmitted,
-        r.lastExamScore,
+        // @ts-ignore legacy mapping includes added fields
+        (r as any).assignmentsCompleted ?? r.assignmentsSubmitted,
+        // @ts-ignore
+        (r as any).assignmentsTotal ?? '',
         r.risk.level,
         r.risk.score
       ].map(escape).join(','));
@@ -435,10 +717,52 @@ const MentorApp: React.FC = () => {
     }
   };
 
+  // Academic edit state at app level
+  const [editTarget, setEditTarget] = useState<MentorStudent | null>(null);
+  const [editAttendance, setEditAttendance] = useState('');
+  const [editCgpa, setEditCgpa] = useState('');
+  const [editAssignCompleted, setEditAssignCompleted] = useState('');
+  const [editAssignTotal, setEditAssignTotal] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const handleOpenEdit = (s: MentorStudent) => {
+    setEditTarget(s);
+    setEditAttendance(String(s.attendance ?? ''));
+    setEditCgpa(String(s.gpa ?? ''));
+    setEditAssignCompleted(String(s.assignmentsCompleted ?? s.assignmentsSubmitted ?? ''));
+    setEditAssignTotal(String(s.assignmentsTotal ?? ''));
+  };
+  const handleCloseEdit = () => { if(!editSaving) setEditTarget(null); };
+  const handleSaveEdit = async () => {
+    if (!editTarget || !session?.token) return;
+    const payload:any = {};
+    const a = Number(editAttendance); if(!Number.isNaN(a) && a>=0 && a<=100) payload.attendancePercent = a;
+    const g = Number(editCgpa); if(!Number.isNaN(g) && g>=0 && g<=10) payload.cgpa = g;
+    const ac = Number(editAssignCompleted); if(!Number.isNaN(ac) && ac>=0) payload.assignmentsCompleted = ac;
+    const at = Number(editAssignTotal); if(!Number.isNaN(at) && at>=0) payload.assignmentsTotal = at;
+    if(Object.keys(payload).length===0){ handleCloseEdit(); return; }
+    setEditSaving(true);
+    try {
+      const r = await fetch(`${API.students}/${editTarget.id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${session.token}` }, body: JSON.stringify(payload) });
+      if(!r.ok) throw new Error('Update failed');
+      const js = await r.json();
+      if(!js.ok) throw new Error(js.error || 'Update failed');
+      setStudents(sts => sts.map(s=> s.id===editTarget.id ? { ...s,
+        attendance: payload.attendancePercent ?? s.attendance,
+        gpa: payload.cgpa ?? s.gpa,
+        assignmentsSubmitted: payload.assignmentsCompleted ?? s.assignmentsSubmitted,
+        assignmentsCompleted: payload.assignmentsCompleted ?? s.assignmentsCompleted,
+        assignmentsTotal: payload.assignmentsTotal ?? s.assignmentsTotal,
+        risk:{ level: js.student.riskTier, score: js.student.riskScore }
+      }: s));
+      setEditTarget(null);
+    } catch(e){ /* optionally handle error */ }
+    finally { setEditSaving(false); }
+  };
+
   const renderPage = () => {
     switch (page) {
       case 'dashboard':
-        return <DashboardPage token={session.token} students={students} onExport={handleExport} exporting={exporting} />;
+        return <DashboardPage token={session.token} students={students} onExport={handleExport} exporting={exporting} onEdit={handleOpenEdit} />;
       case 'manage':
         return <ManageStudentsPage token={session.token} onRiskUpdated={(id, score, tier)=> {
           setStudents(sts => sts.map(s=> s.id===id ? { ...s, risk:{ level: tier.charAt(0).toUpperCase()+tier.slice(1), score } } : s));
@@ -496,7 +820,35 @@ const MentorApp: React.FC = () => {
         <Box sx={{ flex:1, p:{ xs:2, md:3 }, display:'flex', flexDirection:'column', gap:3, overflowY:'auto' }}>
           {loading && <Typography variant="body2">Loading students...</Typography>}
           {err && <Typography variant="body2" color="error">{err}</Typography>}
+          {!loading && !err && page==='dashboard' && students.length===0 && (
+            <Paper elevation={0} sx={{ p:3, border: t=>`1px solid ${t.palette.divider}`, borderRadius:3 }}>
+              <Typography variant="h6" fontWeight={700} gutterBottom>No Students Found</Typography>
+              <Typography variant="body2" color="text.secondary">You currently have no assigned students. This view now also includes unassigned students, but none are available.</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt:1 }}>Next steps:</Typography>
+              <ul style={{ marginTop:4, marginBottom:0, paddingLeft:18 }}>
+                <li><Typography variant="body2" color="text.secondary">Ask an administrator to import or create students.</Typography></li>
+                <li><Typography variant="body2" color="text.secondary">Have an admin assign students to you (mentor) via the admin dashboard.</Typography></li>
+                <li><Typography variant="body2" color="text.secondary">Refresh after assignment to see risk badges and trends.</Typography></li>
+              </ul>
+            </Paper>
+          )}
           {renderPage()}
+          <Dialog open={!!editTarget} onClose={handleCloseEdit} fullWidth maxWidth="xs">
+            <DialogTitle>Edit Academic Metrics</DialogTitle>
+            <DialogContent sx={{ display:'flex', flexDirection:'column', gap:2, pt:1 }}>
+              <TextField label="Attendance %" value={editAttendance} onChange={e=> setEditAttendance(e.target.value)} type="number" inputProps={{ min:0, max:100 }} size="small" disabled={editSaving} />
+              <TextField label="CGPA" value={editCgpa} onChange={e=> setEditCgpa(e.target.value)} type="number" inputProps={{ step:'0.1', min:0, max:10 }} size="small" disabled={editSaving} />
+              <Stack direction={{ xs:'column', sm:'row' }} spacing={1}>
+                <TextField label="Assignments Completed" value={editAssignCompleted} onChange={e=> setEditAssignCompleted(e.target.value)} type="number" inputProps={{ min:0 }} size="small" disabled={editSaving} fullWidth />
+                <TextField label="Assignments Total" value={editAssignTotal} onChange={e=> setEditAssignTotal(e.target.value)} type="number" inputProps={{ min:0 }} size="small" disabled={editSaving} fullWidth />
+              </Stack>
+              <Typography variant="caption" color="text.secondary">Leave fields blank to keep existing values.</Typography>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={handleCloseEdit} disabled={editSaving}>Cancel</Button>
+              <Button onClick={handleSaveEdit} variant="contained" disabled={editSaving}>{editSaving? 'Saving...':'Save'}</Button>
+            </DialogActions>
+          </Dialog>
         </Box>
       </Box>
     </Box>
