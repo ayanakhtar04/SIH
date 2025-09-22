@@ -29,6 +29,20 @@ async function ensureAcademicColumns() {
   } catch { /* ignore */ }
 }
 
+async function ensureRiskSnapshotTable() {
+  try {
+    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "RiskSnapshot" (
+      id TEXT PRIMARY KEY NOT NULL,
+      studentId TEXT NOT NULL,
+      riskScore REAL NOT NULL,
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      source TEXT,
+      FOREIGN KEY(studentId) REFERENCES Student(id) ON DELETE CASCADE
+    )`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS RiskSnapshot_student_idx ON "RiskSnapshot" (studentId, createdAt)`);
+  } catch { /* ignore */ }
+}
+
 const studentsRouter = Router();
 
 // Rate limiter specifically for import endpoint (protect heavy bulk operations)
@@ -157,6 +171,7 @@ export default studentsRouter;
 // PATCH /api/students/:id  (mentor can update academic indicators of their assigned students; admins can update any)
 studentsRouter.patch('/:id', authRequired, async (req: AuthedRequest, res) => {
   await ensureAcademicColumns();
+  await ensureRiskSnapshotTable();
   if (!(isAdmin(req.user?.role) || isMentor(req.user?.role))) {
     return res.status(403).json({ ok:false, error:'Forbidden' });
   }
@@ -215,6 +230,11 @@ studentsRouter.patch('/:id', authRequired, async (req: AuthedRequest, res) => {
     if (cols.length === 0) return res.json({ ok:true, student: { id: student.id, riskScore, riskTier: tier } });
     params.push(id);
     await prisma.$executeRawUnsafe(`UPDATE "Student" SET ${cols.join(', ')} WHERE id = ?`, ...params);
+    if (changed) {
+      try {
+        await prisma.$executeRawUnsafe(`INSERT INTO "RiskSnapshot" (id, studentId, riskScore, source) VALUES (?, ?, ?, ?)`, crypto.randomUUID(), id, riskScore, 'academic_update');
+      } catch { /* ignore snapshot errors */ }
+    }
     return res.json({ ok:true, student:{ id: student.id, riskScore, riskTier: tier, attendancePercent: attendance, cgpa, assignmentsCompleted, assignmentsTotal } });
   } catch (e:any) {
     return res.status(500).json({ ok:false, error:'Update failed', detail: e.message });
