@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from './auth/AuthContext';
 import { useLocation } from 'react-router-dom';
 import {
   AppBar,
@@ -36,11 +37,12 @@ import {
 import { keyframes } from '@emotion/react';
 import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { API } from './api';
+import { normalizeRisk, mapBackendTier } from './risk/riskUtil';
 
 interface Student {
-  student_id: number;
+  student_id: number; // synthetic numeric id for UI
   name: string;
-  attendance_percentage: number;
+  attendance_percentage: number; // derived / placeholder since Node backend student lacks these metrics
   avg_test_score: number;
   assignments_submitted: number;
   total_assignments: number;
@@ -108,33 +110,88 @@ const App = React.forwardRef<AppRef, AppProps>(({ navOpen = true }, ref) => {
     reloadStudents: () => fetchStudents()
   }));
 
-  function fetchStudents() {
+  function fetchStudents(retry = false) {
+    const { session } = authRef.current;
+    // Decide role: prefer explicit session.role; fallback to decoded JWT; fallback to session.kind
+    let role: string | undefined = (session as any)?.role;
+    if (!role && session?.token) {
+      try {
+        const payload = JSON.parse(atob(session.token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+        role = payload?.role || payload?.user?.role;
+      } catch { /* ignore */ }
+    }
+    if (!role) role = (session as any)?.kind;
+    const allowed = ['mentor','admin','counselor','teacher'];
+    if (!session?.token || !role || !allowed.includes(role)) {
+      setStudents([]);
+      if (!session?.token) setError('Awaiting authentication...'); else setError('Mentor access required.');
+      return;
+    }
     setLoading(true);
-    const url = `${API.students}?page=${page}&page_size=${pageSize}&att_high=${attHigh}&score_high=${scoreHigh}&att_med=${attMed}&score_med=${scoreMed}`;
-    fetch(url)
+    setError(null);
+    const url = `${API.students}?page=${page}&pageSize=${pageSize}`; // Node backend expects page & pageSize
+    const headers: Record<string,string> = { Authorization: `Bearer ${session.token}` };
+    fetch(url, { headers })
       .then(res => {
         if (!res.ok) throw new Error(`Status: ${res.status}`);
         return res.json();
       })
-      .then(json => {
-        if (Array.isArray(json)) {
-          setStudents(json);
-          setTotalCount(json.length);
-        } else {
-          const typed = json;
-          setStudents(typed.data || []);
-          setTotalCount(typed.total || (typed.data ? typed.data.length : 0));
-        }
+      .then(payload => {
+        // Expected shape: { ok:true, data: [...], total, page, pageSize }
+        const list = payload?.data || [];
+        const mapped: Student[] = list.map((s: any, idx: number) => {
+          // Synthesize metrics since Node student doesn\'t yet have them; placeholder derivations
+          const score = typeof s.riskScore === 'number' && s.riskScore != null ? Math.round((1 - Math.min(Math.max(s.riskScore,0),1)) * 100) : 70 + ((idx * 7) % 25);
+            const attendance = 60 + ((idx * 11) % 35);
+            const assignmentsTotal = 10;
+            const assignmentsDone = Math.min(assignmentsTotal, Math.round(attendance / 10));
+            const riskLabel = (() => {
+              const tier = mapBackendTier(s.riskTier);
+              if (tier === 'High') return 'High Risk';
+              if (tier === 'Medium') return 'Medium Risk';
+              if (tier === 'Low') return 'Low Risk';
+              return 'Medium Risk'; // legacy fallback
+            })();
+          return {
+            student_id: idx + 1,
+            name: s.name,
+            attendance_percentage: attendance,
+            avg_test_score: score,
+            assignments_submitted: assignmentsDone,
+            total_assignments: assignmentsTotal,
+            fees_paid: (idx % 3) ? 1 : 0,
+            risk_level: riskLabel,
+            risk_color: riskLabel.includes('High') ? '#FF4136' : riskLabel.includes('Medium') ? '#FF851B' : '#2ECC40',
+            risk_reasons: riskLabel.includes('High') ? ['Low attendance','Low average test score'] : riskLabel.includes('Medium') ? ['Attendance variance'] : [],
+            attendance_history: Array.from({ length: 8 }, (_, i) => Math.max(40, Math.min(100, attendance + Math.sin((i+1)/2)*5 - i))),
+            score_history: Array.from({ length: 8 }, (_, i) => Math.max(30, Math.min(100, score + Math.cos((i+1)/2)*4 - i)))
+          };
+        });
+        setStudents(mapped);
+        setTotalCount(payload?.total || mapped.length);
         setError(null);
       })
-      .catch(e => setError(e instanceof Error ? e.message : 'Unknown error'))
+      .catch(e => {
+        const msg = e instanceof Error ? e.message : 'Unknown error';
+        setError(msg);
+        if (!retry && msg.includes('Status: 401')) {
+          // Attempt a delayed retry (session maybe just updated)
+          setTimeout(() => fetchStudents(true), 800);
+        }
+      })
       .finally(() => setLoading(false));
   }
 
   useEffect(() => {
+    authRef.current = { session: auth.session };
     fetchStudents();
     // eslint-disable-next-line
-  }, [page, pageSize, attHigh, scoreHigh, attMed, scoreMed]);
+  }, [page, pageSize]);
+
+  // Keep latest auth session in a ref to avoid re-fetch loop on session change
+  const auth = useAuth();
+  const authRef = React.useRef<{ session: any }>({ session: auth.session });
+  useEffect(() => { authRef.current.session = auth.session; }, [auth.session]);
 
   // Animated pulse ring
   const ping = keyframes`

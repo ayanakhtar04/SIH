@@ -1,15 +1,25 @@
 import { StrictMode, useEffect, useMemo, useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { createTheme, CssBaseline, ThemeProvider } from '@mui/material';
 import './index.css';
 import Sidebar from './components/Sidebar';
+import { DarkModeProvider } from './theme/DarkModeContext';
+import { AuthProvider, useAuth } from './auth/AuthContext';
+import { AuthCard } from './auth/AuthCard';
+import { studentLogin, studentSignup, mentorLogin, mentorSignup, adminLogin, decodeJwt } from './auth/api';
 import Overview from './pages/Overview';
 import Settings from './pages/Settings';
 import App from './App';
 import Notifications from './pages/Notifications';
-import { Box, Fab, Paper } from '@mui/material';
+import { Box, Fab, Paper, Stack, Button } from '@mui/material';
 import OverviewPage from './pages/OverviewPage';
+import StudentImport from './pages/StudentImport';
+import AdminApp from './admin/AdminApp';
+import MentorApp from './mentor/MentorApp';
+import StudentApp from './student/StudentApp';
+import StudentActivate from './pages/StudentActivate';
+import ThemeTransition from './theme/ThemeTransition';
 
 function usePersistentState(key, initial) {
   const [val, setVal] = useState(() => {
@@ -26,7 +36,52 @@ function usePersistentState(key, initial) {
   return [val, setVal];
 }
 
-export function Shell() {
+function AuthScreen() {
+  const { login } = useAuth();
+  const [role, setRole] = useState('student'); // 'student' | 'mentor' | 'admin'
+  const [mode, setMode] = useState('login');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function handleSubmit(data){
+    setLoading(true); setError(null);
+    try {
+      if (role==='student') {
+        const resp = mode==='signup'? await studentSignup({ name: data.name || 'Student', email: data.email, password: data.password, studentCode: data.studentCode }) : await studentLogin({ email: data.email, password: data.password });
+        const dec = decodeJwt(resp.token) || {};
+        login({ token: resp.token, kind:'student', role: dec.role || dec.user?.role || 'student' });
+        // ensure URL uses /student base after login
+        try { window.history.replaceState(null,'','/student'); } catch {}
+      } else if (role==='mentor') {
+        const resp = mode==='signup'? await mentorSignup({ name: data.name || 'Mentor', email: data.email, password: data.password }) : await mentorLogin({ email: data.email, password: data.password });
+        const dec = decodeJwt(resp.token) || {};
+        const roleFromToken = dec.role || dec.user?.role || 'mentor';
+        login({ token: resp.token, kind:'user', role: roleFromToken });
+      } else if (role==='admin') {
+        // Admin login only (no signup path via UI)
+        const resp = await adminLogin({ email: data.email, password: data.password });
+        const dec = decodeJwt(resp.token) || {};
+        const roleFromToken = dec.role || dec.user?.role || 'admin';
+        login({ token: resp.token, kind:'user', role: roleFromToken });
+      }
+    } catch(e){ setError(e.message || 'Auth failed'); }
+    finally { setLoading(false); }
+  }
+  return (
+  <Box sx={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', p:0, background:(t)=> t.palette.mode==='dark'? 'linear-gradient(145deg,#121212,#1e1e1e)' : 'linear-gradient(145deg,#e7ecf3,#f5f7fa)' }}>
+      <Stack spacing={3} alignItems="center">
+        <Stack direction="row" spacing={2}>
+          <Button variant={role==='student'? 'contained':'outlined'} onClick={()=> setRole('student')} size="small">Student</Button>
+          <Button variant={role==='mentor'? 'contained':'outlined'} onClick={()=> setRole('mentor')} size="small">Mentor</Button>
+          <Button variant={role==='admin'? 'contained':'outlined'} onClick={()=> setRole('admin')} size="small">Admin</Button>
+        </Stack>
+        <AuthCard role={role} mode={mode} setMode={setMode} loading={loading} error={error} onSubmit={handleSubmit} allowMentorSignup={false} />
+      </Stack>
+    </Box>
+  );
+}
+
+function Shell() {
   const [dark, setDark] = usePersistentState('pk.dark', false);
   const [navOpen, setNavOpen] = usePersistentState('pk.navOpen', true);
   const theme = useMemo(() => {
@@ -151,30 +206,72 @@ export function Shell() {
       appRef.current.reloadStudents();
     }
   };
+  const { session, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  if (!session) return <AuthScreen />;
+
+  // mentor redirect
+  if (session.role === 'mentor' && !location.pathname.startsWith('/mentor')) {
+    navigate('/mentor', { replace: true });
+  }
+  // admin redirect
+  if (session.role === 'admin' && !location.pathname.startsWith('/admin')) {
+    navigate('/admin', { replace: true });
+  }
+  // student redirect (use /student prefix now)
+  if (session.kind === 'student' && !location.pathname.startsWith('/student')) {
+    navigate('/student', { replace: true });
+  }
+
+  if (session.kind === 'student') {
+    return (
+      <DarkModeProvider value={{ dark, toggleDark: () => setDark(v=>!v), setDark }}>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <ThemeTransition />
+          {/* student now nested under /student/* route, keep direct for fallback */}
+          <StudentApp logout={logout} />
+        </ThemeProvider>
+      </DarkModeProvider>
+    );
+  }
+  // Determine if path uses embedded nav
+  const usingEmbeddedNav = location.pathname.startsWith('/mentor') || location.pathname.startsWith('/admin');
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <Box sx={{ minHeight: '100vh' }}>
-  <Sidebar open={navOpen} onToggle={(v)=> setNavOpen(v)} />
+    <DarkModeProvider value={{ dark, toggleDark: () => setDark(v=>!v), setDark }}>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <ThemeTransition />
+        <Box sx={{ minHeight: '100vh' }}>
+  {!usingEmbeddedNav && <Sidebar open={navOpen} onToggle={(v)=> setNavOpen(v)} />}
         {/* floating hamburger removed per UX request */}
-  <Box sx={{ pl: { xs: 2, sm: navOpen ? '305px' : '95px' }, pr: 2, pt: 8, pb: 2, transition: 'padding-left 250ms ease' }}>
+  <Box sx={{ pl: usingEmbeddedNav ? 0 : { xs:0, sm: navOpen ? '305px' : '95px' }, pr: 0, pt: 0, pb: 0, transition: 'padding-left 250ms ease' }}>
           <Routes>
             <Route path="/" element={<Overview appRef={appRef} navOpen={navOpen} />} />
+            {/* student scoped route */}
+            <Route path="/student/*" element={<StudentApp logout={logout} />} />
+            <Route path="/activate" element={<StudentActivate />} />
             <Route path="/new-overview" element={<OverviewPage />} />
             <Route path="/settings" element={<Settings dark={dark} onToggleDark={() => setDark(v => !v)} reloadStudents={reloadStudents} />} />
-            {/* Invoices and Wallet routes removed */}
             <Route path="/notifications" element={<Notifications />} />
+            <Route path="/import" element={<StudentImport />} />
+            <Route path="/admin/*" element={<AdminApp />} />
+            <Route path="/mentor/*" element={<MentorApp />} />
           </Routes>
         </Box>
-      </Box>
-    </ThemeProvider>
+        </Box>
+      </ThemeProvider>
+    </DarkModeProvider>
   );
 }
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
-      <Shell />
+      <AuthProvider>
+        <Shell />
+      </AuthProvider>
     </BrowserRouter>
   </StrictMode>
 );

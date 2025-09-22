@@ -1,0 +1,10 @@
+{
+  "name": "sih-workspace-root",
+  "private": true,
+  "scripts": {
+    "mcp:testsprite": "node node_modules/@testsprite/testsprite-mcp/dist/index.js"
+  },
+  "devDependencies": {
+    "@testsprite/testsprite-mcp": "^0.0.13"
+  }
+}

@@ -1,6 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Avatar, Box, Stack, Tooltip, Typography, useTheme, Badge, IconButton } from '@mui/material';
+import { Avatar, Box, Stack, Tooltip, Typography, useTheme, Badge, IconButton, Chip, alpha, Button } from '@mui/material';
+import LogoutIcon from '@mui/icons-material/Logout';
+import { useAuth } from '../auth/AuthContext';
+// Import API base to build health endpoint
+// Using optional import pattern in case path changes later
+import { API_BASE } from '../api';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded';
@@ -35,12 +40,58 @@ const Sidebar: React.FC<SidebarProps> = ({ open: controlledOpen, onToggle }) => 
     outline: 'none',
   });
 
-  // Nav items
-  const items = [
+  const auth = useAuth();
+  const currentRole = (auth.session as any)?.role || ((auth.session as any)?.kind === 'student' ? 'student' : undefined);
+  const userInitial = currentRole ? currentRole.charAt(0).toUpperCase() : 'U';
+
+  // Nav items (typed with optional badge)
+  interface NavItem { to: string; label: string; caption: string; icon: React.ReactNode; badge?: number; }
+  const role = currentRole;
+  const baseItems: NavItem[] = [
     { to: '/', label: 'Overview', caption: 'Students & metrics', icon: <DashboardIcon fontSize="small" /> },
     { to: '/notifications', label: 'Notifications', caption: 'Alerts & updates', icon: <NotificationsNoneRoundedIcon fontSize="small" />, badge: 3 },
+    { to: '/import', label: 'Import', caption: 'Bulk students', icon: <SettingsRoundedIcon fontSize="small" /> },
     { to: '/settings', label: 'Settings', caption: 'Theme & tools', icon: <SettingsRoundedIcon fontSize="small" /> },
   ];
+  const mentorLink: NavItem[] = role && ['mentor','teacher','counselor','admin'].includes(role.toLowerCase())
+    ? [{ to: '/mentor', label: 'Mentor Dash', caption: 'Advise students', icon: <DashboardIcon fontSize="small" /> }]
+    : [];
+  const items: NavItem[] = mentorLink.concat(baseItems);
+
+  // Health status state
+  const [health, setHealth] = useState<{state: 'unknown'|'online'|'offline'; latency?: number; last?: Date}>({ state: 'unknown' });
+  const timerRef = useRef<number | null>(null);
+
+  const performHealthCheck = useCallback(async () => {
+    const start = performance.now();
+    try {
+      const res = await fetch(`${API_BASE.replace(/\/$/, '')}/health`, { method: 'GET' });
+      const latency = performance.now() - start;
+      if (!res.ok) throw new Error('Bad status');
+      await res.json().catch(()=>({}));
+      setHealth({ state: 'online', latency, last: new Date() });
+    } catch {
+      const latency = performance.now() - start;
+      setHealth(h => ({ state: 'offline', latency, last: new Date() }));
+    }
+  }, []);
+
+  useEffect(() => {
+    // Immediate check then interval
+    performHealthCheck();
+    timerRef.current = window.setInterval(performHealthCheck, 60000); // 60s
+    return () => { if (timerRef.current) window.clearInterval(timerRef.current); };
+  }, [performHealthCheck]);
+
+  const healthColor = health.state === 'online' ? 'success' : health.state === 'offline' ? 'error' : 'default';
+  const healthLabel = health.state === 'online' ? 'Online' : health.state === 'offline' ? 'Offline' : 'Checking';
+  const healthTooltip = () => {
+    const base = `API: ${healthLabel}`;
+    if (health.last) return `${base}\nLast: ${health.last.toLocaleTimeString()}${health.latency ? ` (${Math.round(health.latency)}ms)` : ''}`;
+    return base;
+  };
+
+  // moved auth/currentRole earlier to avoid TDZ
 
   return (
     <Box component="aside" sx={{
@@ -87,9 +138,18 @@ const Sidebar: React.FC<SidebarProps> = ({ open: controlledOpen, onToggle }) => 
             transform: open ? 'translateY(0)' : 'translateY(0)'
           }} />
           <Box component="figcaption" sx={{ textAlign: 'center', opacity: open ? 1 : 0, transition: 'opacity 300ms 200ms' }}>
-            <Typography className="user-id" sx={{ fontSize: '1.0625rem', fontWeight: 500, color: isDark? 'grey.300':'text.secondary', mb: 0.25 }}>PathKeepers</Typography>
-            <Typography className="user-role" sx={{ fontSize: '0.75rem', fontWeight: 500, color: isDark? 'grey.500':'text.disabled' }}>Platform</Typography>
-          </Box>
+              <Stack spacing={0.3} alignItems="center">
+                <Avatar sx={{ width: 38, height: 38, bgcolor: accent, fontSize: 18 }}>
+                  {userInitial}
+                </Avatar>
+                <Typography className="user-id" sx={{ fontSize: '0.85rem', fontWeight: 600, maxWidth: '100%', wordBreak: 'break-word', color: isDark? 'grey.200':'text.primary' }}>
+                  {open ? (auth.session ? (((auth.session as any).email) || 'Signed In') : 'Guest') : ''}
+                </Typography>
+                <Typography className="user-role" sx={{ fontSize: '0.65rem', fontWeight: 500, letterSpacing: 0.5, color: isDark? 'grey.500':'text.disabled', textTransform:'uppercase' }}>
+                  {open ? (currentRole || 'unknown') : ''}
+                </Typography>
+              </Stack>
+            </Box>
         </Box>
       </Box>
 
@@ -149,18 +209,53 @@ const Sidebar: React.FC<SidebarProps> = ({ open: controlledOpen, onToggle }) => 
           letterSpacing: '0.35px', textTransform: 'uppercase', fontSize: '0.65rem',
           transition: 'opacity 300ms'
         }}>Secondary</Typography>
-        <Stack direction="row" spacing={open ? 1 : 0.5} justifyContent={open ? 'flex-start' : 'center'} sx={{ px: open ? 0.5 : 0 }}>
-          {['E','M','A'].map((l,i)=>(
-            <Tooltip key={i} title={!open ? `User ${l}` : ''} placement="right" arrow>
-              <Avatar sx={{ width: open ? 30 : 34, height: open ? 30 : 34, fontSize: 13 }}>{l}</Avatar>
+
+        {/* Health badge */}
+        <Box sx={{ px: open ? 0.5 : 0, display: 'flex', justifyContent: open ? 'flex-start' : 'center' }}>
+          {open ? (
+            <Tooltip title={healthTooltip()} placement="right" arrow>
+              <Chip
+                size="small"
+                label={`API: ${healthLabel}`}
+                color={healthColor === 'default' ? undefined : healthColor as any}
+                variant={health.state === 'online' ? 'filled' : 'outlined'}
+                sx={{
+                  fontWeight: 500,
+                  letterSpacing: 0.3,
+                  bgcolor: (t) => health.state === 'online' ? alpha(t.palette.success.main, 0.12) : undefined,
+                }}
+              />
             </Tooltip>
-          ))}
+          ) : (
+            <Tooltip title={healthTooltip()} placement="right" arrow>
+              <Box sx={{ width: 14, height: 14, borderRadius: '50%',
+                bgcolor: (t)=> health.state === 'online' ? t.palette.success.main : health.state === 'offline' ? t.palette.error.main : t.palette.action.disabled,
+                boxShadow: (t)=> health.state === 'online' ? `0 0 0 4px ${alpha(t.palette.success.main,0.25)}` : 'none',
+                transition: 'background 300ms, box-shadow 300ms' }} />
+            </Tooltip>
+          )}
+        </Box>
+        <Stack direction="column" spacing={1} sx={{ px: open ? 0.5 : 0, width:'100%' }}>
+          <Tooltip title={open ? 'Sign out' : 'Logout'} placement="right" arrow>
+            <Button
+              onClick={() => { auth.logout(); }}
+              size="small"
+              fullWidth
+              variant="outlined"
+              startIcon={open ? <LogoutIcon fontSize="small" /> : undefined}
+              sx={{
+                justifyContent: open ? 'flex-start' : 'center',
+                minHeight: 36,
+                fontWeight: 600,
+                textTransform: 'none',
+                borderRadius: 2,
+                px: open ? 1.4 : 0,
+              }}
+            >
+              {open ? 'Logout' : <LogoutIcon fontSize="small" />}
+            </Button>
+          </Tooltip>
         </Stack>
-        <Link to="/" style={styleFor(true)}>
-          <Box sx={{ mt: 0.5, borderRadius: '10px', textAlign: 'center', p: 0.8, bgcolor: hoverBg, '&:hover': { bgcolor: activeBg } }}>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>{open ? 'New Task' : '+'}</Typography>
-          </Box>
-        </Link>
       </Stack>
     </Box>
   );
