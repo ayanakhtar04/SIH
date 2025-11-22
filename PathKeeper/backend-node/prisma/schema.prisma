@@ -3,6 +3,8 @@
 
 generator client {
   provider = "prisma-client-js"
+  // Ensure query engine available for local Windows dev and generic native
+  binaryTargets = ["native", "windows"]
 }
 
 datasource db {
