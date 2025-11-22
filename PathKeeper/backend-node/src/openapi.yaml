@@ -1,0 +1,272 @@
+openapi: 3.0.3
+info:
+  title: PathKeepers Backend API
+  version: 0.1.0
+  description: >-
+    Early scaffold of PathKeepers API. This spec will expand as features evolve.
+servers:
+  - url: http://localhost:6060
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  service:
+                    type: string
+                  usersSeeded:
+                    type: integer
+                  timestamp:
+                    type: string
+  /api/auth/login:
+    post:
+      summary: Login (temporary scaffold)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Auth success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  token: { type: string }
+                  user:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      email: { type: string }
+                      role: { type: string }
+                      name: { type: string }
+        '401':
+          description: Invalid credentials
+  /api/auth/me:
+    get:
+      summary: Get current user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User info
+  /api/ml/predict:
+    post:
+      summary: Predict dropout risk (mock)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                features:
+                  type: array
+                  items: { type: number }
+      responses:
+        '200':
+          description: Prediction result
+  /api/ml/train:
+    post:
+      summary: Start model training (mock)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Training started
+  /api/students:
+    get:
+      summary: List students (paginated)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, minimum: 1, maximum: 100 }
+        - in: query
+          name: search
+          schema: { type: string }
+      responses:
+        '200':
+          description: Student list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        studentCode: { type: string }
+                        name: { type: string }
+                        email: { type: string }
+                        program: { type: string }
+                        year: { type: integer }
+                        riskScore: { type: number, nullable: true }
+                        riskTier: { type: string }
+                        mentorId: { type: string, nullable: true }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  total: { type: integer }
+                  totalPages: { type: integer }
+  /api/students/{id}:
+    get:
+      summary: Get student detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Student detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  student:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      studentCode: { type: string }
+                      name: { type: string }
+                      email: { type: string }
+                      program: { type: string }
+                      year: { type: integer }
+                      riskScore: { type: number, nullable: true }
+                      riskTier: { type: string }
+                      lastRiskUpdated: { type: string, format: date-time, nullable: true }
+                      mentorId: { type: string, nullable: true }
+                      createdAt: { type: string, format: date-time }
+        '404':
+          description: Not found
+  /api/students/import:
+    post:
+      summary: Bulk import students (CSV)
+      security:
+        - bearerAuth: []
+      description: |-
+        Bulk import students from a CSV file. Supports either multipart/form-data (file field) or raw text/csv body.
+        Rate limited: max 10 imports per 15 minutes per IP.
+        Non-dry run operations are executed inside a transaction; partial failures roll back all inserts.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                dryRun:
+                  type: string
+                  description: 'true to validate only (default true)'
+          text/csv:
+            schema:
+              type: string
+              description: Raw CSV content as request body. Use query param dryRun=false to persist.
+      responses:
+        '200':
+          description: Import result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  dryRun: { type: boolean }
+                  counts:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      valid: { type: integer }
+                      created: { type: integer }
+                      skipped: { type: integer }
+                      errors: { type: integer }
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        line: { type: integer }
+                        error: { type: string }
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        studentCode: { type: string }
+                        name: { type: string }
+                        email: { type: string }
+                        program: { type: string }
+                        year: { type: integer }
+                        riskScore: { type: number }
+  /api/students/import/template:
+    get:
+      summary: Get student import template
+      description: Returns a sample CSV and column metadata for building an import file.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Template details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  filenameSuggestion: { type: string }
+                  sampleCsv: { type: string }
+                  columns:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        required: { type: boolean }
+                        notes: { type: string }
+                  dryRunDefault: { type: boolean }
+                  rateLimit:
+                    type: object
+                    properties:
+                      windowMinutes: { type: integer }
+                      maxImportsPerWindow: { type: integer }
+                  transaction: { type: boolean }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

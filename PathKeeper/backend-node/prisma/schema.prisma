@@ -1,0 +1,154 @@
+// Prisma schema for PathKeepers initial persistence layer
+// Using SQLite for fast local dev; can switch provider to postgresql later.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  role         String    // 'admin' | 'counselor' | 'viewer' | 'mentor' (legacy 'teacher' still possible until cleanup)
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  students     Student[] @relation("MentorStudents")
+  mentorNotes  MentorNote[]
+  meetings     Meeting[]
+  notificationLogs NotificationLog[] @relation("NotificationLogCreatedBy")
+  createdPlaybookAssignments StudentPlaybookAssignment[] @relation("MentorAssignments")
+}
+
+model Student {
+  id              String        @id @default(cuid())
+  studentCode     String        @unique // Institutional ID
+  name            String
+  email           String        @unique
+  passwordHash    String?       // Null until student activates account
+  program         String?
+  year            Int?          // Academic year/semester number
+  // Extended onboarding & profile fields
+  phone           String?       // Student contact number
+  guardianName    String?       // Guardian full name
+  guardianEmail   String?       // Guardian email
+  guardianPhone   String?       // Guardian phone
+  acceptedTermsAt DateTime?     // Set when student agrees to Terms of Service
+  riskScore       Float?        // Placeholder until ML integration
+  lastRiskUpdated DateTime?
+  mentor          User?         @relation("MentorStudents", fields: [mentorId], references: [id])
+  mentorId        String?
+  createdAt       DateTime      @default(now())
+  signupTokens    SignupToken[]
+  // Future: guardian contacts, attendance, etc.
+  playbookAssignments StudentPlaybookAssignment[]
+  mentorNotes MentorNote[]
+  meetings Meeting[]
+  notificationLogs NotificationLog[]
+}
+
+model SignupToken {
+  id         String   @id @default(cuid())
+  token      String   @unique
+  student    Student  @relation(fields: [studentId], references: [id])
+  studentId  String
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+}
+
+// Simple audit log for user CRUD actions
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  actorId   String?
+  userId    String?
+  details   String?
+  createdAt DateTime @default(now())
+}
+
+// Intervention playbooks (library of predefined action plans)
+model InterventionPlaybook {
+  id          String                     @id @default(cuid())
+  key         String                     @unique
+  title       String
+  description String?
+  category    String?
+  steps       String?
+  active      Boolean                    @default(true)
+  createdAt   DateTime                   @default(now())
+  assignments StudentPlaybookAssignment[]
+}
+
+// Assignment of a playbook to a student by a mentor/admin
+model StudentPlaybookAssignment {
+  id         String                @id @default(cuid())
+  student    Student               @relation(fields: [studentId], references: [id])
+  studentId  String
+  playbook   InterventionPlaybook  @relation(fields: [playbookId], references: [id])
+  playbookId String
+  mentor     User?                 @relation("MentorAssignments", fields: [mentorId], references: [id])
+  mentorId   String?
+  status     String                @default("assigned") // assigned|in_progress|completed|cancelled
+  notes      String?
+  createdAt  DateTime              @default(now())
+  completedAt DateTime?
+}
+
+// Mentor/counselor note log (counseling timeline entries)
+model MentorNote {
+  id        String   @id @default(cuid())
+  student   Student  @relation(fields: [studentId], references: [id])
+  studentId String
+  mentor    User?    @relation(fields: [mentorId], references: [id])
+  mentorId  String?
+  note      String
+  createdAt DateTime @default(now())
+}
+
+// Scheduled mentor-student meetings (calendar scaffold)
+model Meeting {
+  id         String   @id @default(cuid())
+  student    Student  @relation(fields: [studentId], references: [id])
+  studentId  String
+  mentor     User?    @relation(fields: [mentorId], references: [id])
+  mentorId   String?
+  title      String
+  startsAt   DateTime
+  endsAt     DateTime
+  location   String?  // optional physical/virtual location
+  notes      String?  // agenda or summary
+  status     String   @default("scheduled") // scheduled|cancelled|completed
+  createdAt  DateTime @default(now())
+}
+
+// Outbound notification log (email/SMS placeholders)
+model NotificationLog {
+  id          String   @id @default(cuid())
+  channel     String   // email|sms (extensible)
+  status      String   // queued|sent|failed (placeholder states)
+  recipient   String
+  subject     String?
+  body        String
+  student     Student? @relation(fields: [studentId], references: [id])
+  studentId   String?
+  createdBy   User?    @relation("NotificationLogCreatedBy", fields: [createdById], references: [id])
+  createdById String?
+  error       String?
+  createdAt   DateTime @default(now())
+}
+
+// Single row (or versioned) configuration for risk model weights & thresholds
+model RiskModelConfig {
+  id            String   @id @default(cuid())
+  version       Int      @default(1)
+  weights       String   // e.g. JSON string: { attendance:0.3, gpa:0.4, assignments:0.2, notes:0.1 }
+  thresholds    String   // e.g. JSON string: { high:0.7, medium:0.4 }
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
