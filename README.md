@@ -536,3 +536,53 @@ Notifications Not Appearing:
 ## License
 
 For demo and prototype use.
+
+---
+
+## Branching & Versioning
+
+We use a lightweight Git workflow with semantic versioning:
+
+Branches:
+- `main`: Production-ready code only; protected (review required).
+- `develop`: Integration branch for completed features before release.
+- `feature/<short-name>`: New features; branch off `develop`, PR back to `develop`.
+- `bugfix/<issue-id>`: Non-critical fixes; branch off `develop`, PR back.
+- `hotfix/<issue-id>`: Urgent production fixes; branch off `main`, PR into `main` then merged back to `develop`.
+- `release/<version>`: (Optional) Stabilization branch; created from `develop` prior to tagging; after QA merge to `main` then back to `develop`.
+
+Versioning:
+- Tags follow `vMAJOR.MINOR.PATCH` (e.g., `v0.1.0`).
+- Increment MAJOR for breaking API or data changes.
+- Increment MINOR for new backward-compatible functionality.
+- Increment PATCH for fixes or internal improvements.
+
+Typical Flow:
+1. Create feature branch: `git checkout -b feature/login-rate-limit develop`.
+2. Implement & push; open PR to `develop`.
+3. After merge, regression test on `develop`; repeat for multiple features.
+4. (Optional) Create release branch: `git checkout -b release/v0.2.0 develop` -> finalize docs/tests.
+5. Merge release into `main`: tag `v0.2.0`, push tags.
+6. Merge release back into `develop` (to propagate version bump or hotfixes).
+
+Hotfix Flow:
+1. `git checkout -b hotfix/critical-null main`
+2. Fix, commit, open PR to `main`.
+3. After merge & tag (e.g., `v0.1.1`), merge `main` back into `develop`.
+
+Tagging Commands:
+```
+git tag -a v0.1.0 -m "Initial version 0.1.0"
+git push origin v0.1.0
+```
+
+Release Prep Checklist:
+- All tests green (CI badge passing)
+- README updated (features & endpoints)
+- Migration scripts committed
+- Version bump decided; changelog drafted (add `CHANGELOG.md` soon)
+
+Future Enhancements:
+- Enforce conventional commits (`feat:`, `fix:`) + automated CHANGELOG generation.
+- GitHub Actions release workflow to create GitHub Release from annotated tag.
+
