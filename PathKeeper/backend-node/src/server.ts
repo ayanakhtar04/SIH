@@ -24,6 +24,8 @@ import meetingsRouter from './routes.meetings';
 import notificationsRouter from './routes.notifications';
 import riskConfigRouter from './routes.riskConfig';
 import metricsRouter from './routes.admin.metrics';
+import menteeFormRouter from './routes.menteeForm';
+import mentorFormRouter from './routes.mentorForm';
 
 
 
@@ -63,6 +65,8 @@ function createServer() {
   app.use('/api', notificationsRouter); // notify & assist endpoints
   app.use('/api', riskConfigRouter); // risk model configuration
   app.use('/api', metricsRouter); // admin metrics endpoints
+  app.use('/api/mentee-form', menteeFormRouter);
+  app.use('/api/mentor-form', mentorFormRouter);
   try {
     const specPath = path.join(process.cwd(), 'src', 'openapi.yaml');
     if (fs.existsSync(specPath)) {

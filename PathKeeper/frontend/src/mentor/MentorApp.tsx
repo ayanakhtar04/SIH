@@ -8,6 +8,7 @@ import SpaceDashboardIcon from '@mui/icons-material/SpaceDashboard';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
 import GroupIcon from '@mui/icons-material/Group';
 import PersonIcon from '@mui/icons-material/Person';
+import AssignmentIcon from '@mui/icons-material/Assignment';
 import SettingsIcon from '@mui/icons-material/Settings';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu';
@@ -23,7 +24,10 @@ import { listPlaybooks, assignPlaybook, addNote, Playbook } from './playbookApi'
 import { listStudentMeetings, createMeeting, cancelMeeting, Meeting } from './meetingsApi';
 import Student360Dialog from './Student360Dialog';
 import ManageStudentsPage from './ManageStudentsPage';
+import AssignmentsPage from './AssignmentsPage';
 import NotificationModal from './NotificationModal';
+import MentorForm from './MentorForm';
+import MenteeFormView from './MenteeFormView';
 import { API } from '../api';
 import { assessDropout } from './student360Api';
 
@@ -90,6 +94,7 @@ const DashboardPage: React.FC<{ token:string; students: MentorStudent[]; onExpor
   const [mtLocation, setMtLocation] = useState('');
   const [mtNotes, setMtNotes] = useState('');
   const [show360, setShow360] = useState(false);
+  const [viewFormStudentId, setViewFormStudentId] = useState<string | null>(null);
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [bulkNotifyOpen, setBulkNotifyOpen] = useState(false);
   const [showMeetSection, setShowMeetSection] = useState(true);
@@ -458,6 +463,7 @@ const DashboardPage: React.FC<{ token:string; students: MentorStudent[]; onExpor
                     {!selectMode && <Stack direction="row" spacing={1} justifyContent="flex-end">
                       <Button size="small" variant="outlined" onClick={()=> setQuick(s)}>Quick</Button>
                       <Button size="small" variant="outlined" onClick={()=> { setQuick(s); setShow360(true); }}>View</Button>
+                      <Button size="small" variant="outlined" onClick={()=> setViewFormStudentId(s.id)}>Form</Button>
                       <Button size="small" variant="text" onClick={()=> onEdit(s)}>Edit</Button>
                     </Stack>}
                     {selectMode && <Button size="small" variant={selected.has(s.id)? 'contained':'outlined'} onClick={()=> toggleSelect(s.id)}>{selected.has(s.id)? '✓':'Select'}</Button>}
@@ -493,7 +499,10 @@ const DashboardPage: React.FC<{ token:string; students: MentorStudent[]; onExpor
                 </Stack>}
               </Box>
             </Stack>
-            {quick && <Button size="small" onClick={()=> setShow360(true)} variant="outlined">360°</Button>}
+            {quick && <Stack direction="row" spacing={1}>
+              <Button size="small" onClick={()=> setViewFormStudentId(quick.id)} variant="outlined">Form</Button>
+              <Button size="small" onClick={()=> setShow360(true)} variant="outlined">360°</Button>
+            </Stack>}
           </Stack>
         </DialogTitle>
         <DialogContent sx={{ display:'flex', flexDirection:'column', gap:2, maxHeight:'65vh', overflowY:'auto', pt:0 }}>
@@ -553,6 +562,11 @@ const DashboardPage: React.FC<{ token:string; students: MentorStudent[]; onExpor
         </DialogActions>
       </Dialog>
   <Student360Dialog open={show360} onClose={()=> setShow360(false)} token={token} studentId={quick? quick.id: null} />
+  <Dialog open={!!viewFormStudentId} onClose={()=> setViewFormStudentId(null)} fullWidth maxWidth="md" scroll="paper">
+    <DialogContent sx={{ p: 0 }}>
+      {viewFormStudentId && <MenteeFormView studentId={viewFormStudentId} onClose={()=> setViewFormStudentId(null)} />}
+    </DialogContent>
+  </Dialog>
   <NotificationModal open={notifyOpen} onClose={()=> setNotifyOpen(false)} token={token} studentIds={quick? [quick.id]: undefined} singleStudentName={quick?.name} />
   {/* Global notify modal opened from Student360 via window event */}
   <NotificationModal open={(window as any).__pkGlobalNotify?.open || false} onClose={()=> { (window as any).__pkGlobalNotify = { open:false }; }} token={token} studentIds={(window as any).__pkGlobalNotify?.studentIds} presetBody={(window as any).__pkGlobalNotify?.presetBody} />
@@ -612,7 +626,7 @@ const MentorApp: React.FC = () => {
   const { session, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [page, setPage] = useState<'dashboard'|'manage'|'profile'|'settings'>('dashboard');
+  const [page, setPage] = useState<'dashboard'|'manage'|'assignments'|'profile'|'settings'|'mentor-form'>('dashboard');
   // dark mode handled globally via context
   const [students, setStudents] = useState<MentorStudent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -886,6 +900,10 @@ const MentorApp: React.FC = () => {
         return <ManageStudentsPage token={session.token} onRiskUpdated={(id, score, tier)=> {
           setStudents(sts => sts.map(s=> s.id===id ? { ...s, risk:{ level: tier.charAt(0).toUpperCase()+tier.slice(1), score } } : s));
         }} />;
+      case 'assignments':
+        return <AssignmentsPage />;
+      case 'mentor-form':
+        return <MentorForm />;
       case 'profile':
         return <ProfilePage />;
       case 'settings':
@@ -915,6 +933,8 @@ const MentorApp: React.FC = () => {
         <Stack spacing={0.5} sx={{ p:1.5, flex:1 }}>
           <NavBtn active={page==='dashboard'} icon={<SpaceDashboardIcon fontSize="small" />} label="Mentor Dashboard" onClick={()=> setPage('dashboard')} open={sidebarOpen} />
           <NavBtn active={page==='manage'} icon={<ManageAccountsIcon fontSize="small" />} label="Manage Students" onClick={()=> setPage('manage')} open={sidebarOpen} />
+          <NavBtn active={page==='assignments'} icon={<AssignmentIcon fontSize="small" />} label="Assignments" onClick={()=> setPage('assignments')} open={sidebarOpen} />
+          <NavBtn active={page==='mentor-form'} icon={<AssignmentIcon fontSize="small" />} label="Mentor Form" onClick={()=> setPage('mentor-form')} open={sidebarOpen} />
           <Divider flexItem sx={{ my:1 }} />
           <NavBtn active={false} icon={<SpaceDashboardIcon fontSize="small" />} label="Overview" onClick={()=> navigate('/')} open={sidebarOpen} />
           <NavBtn active={false} icon={<SpaceDashboardIcon fontSize="small" />} label="Notifications" onClick={()=> navigate('/notifications')} open={sidebarOpen} />

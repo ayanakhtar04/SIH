@@ -1,0 +1,196 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Mentee Registration Form</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; margin: 28px; color: #111; font-size: 12px; }
+    h1 { font-size: 18px; text-align: center; margin-bottom: 20px; text-transform: uppercase; }
+    h2 { font-size: 14px; margin-top: 15px; margin-bottom: 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+    .row { display: flex; gap: 10px; margin-bottom: 8px; }
+    .col { flex: 1; }
+    label { font-weight: bold; display: block; margin-bottom: 2px; }
+    .value { padding: 4px 6px; border: 1px solid #ccc; background: #f9f9f9; min-height: 18px; }
+    .textarea { padding: 6px; border: 1px solid #ccc; background: #f9f9f9; min-height: 60px; white-space: pre-wrap; }
+    .signature-section { margin-top: 40px; display: flex; justify-content: space-between; text-align: center; }
+    .signature-box { width: 30%; border-top: 1px solid #000; padding-top: 5px; }
+  </style>
+</head>
+<body>
+  <h1>Mentee Registration Form</h1>
+
+  <div class="row">
+    <div class="col">
+      <label>1. Name of the Student:</label>
+      <div class="value"><%= data.name || '' %></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      <label>2. Enrolment Number:</label>
+      <div class="value"><%= data.enrollment || '' %></div>
+    </div>
+    <div class="col">
+      <label>5. Blood Group:</label>
+      <div class="value"><%= data.blood_group || '' %></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      <label>3. Father's Name:</label>
+      <div class="value"><%= data.father_name || '' %></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      <label>4. Mother's Name:</label>
+      <div class="value"><%= data.mother_name || '' %></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      <label>6. Email-id (STUDENT):</label>
+      <div class="value"><%= data.student_email || '' %></div>
+    </div>
+    <div class="col">
+      <label>7. Email-id (FATHER):</label>
+      <div class="value"><%= data.father_email || '' %></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      <label>8. Mobile No (STUDENT):</label>
+      <div class="value"><%= data.student_mobile || '' %></div>
+    </div>
+    <div class="col">
+      <label>9. Mobile No (FATHER):</label>
+      <div class="value"><%= data.father_mobile || '' %></div>
+    </div>
+    <div class="col">
+      <label>10. Mobile No (MOTHER):</label>
+      <div class="value"><%= data.mother_mobile || '' %></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      <label>11. Course:</label>
+      <div class="value"><%= data.course || '' %></div>
+    </div>
+    <div class="col">
+      <label>12. Branch:</label>
+      <div class="value"><%= data.branch || '' %></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      <label>Department:</label>
+      <div class="value"><%= data.department || '' %></div>
+    </div>
+    <div class="col">
+      <label>Semester:</label>
+      <div class="value"><%= data.semester || '' %></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      <label>13. Hobbies:</label>
+      <div class="value"><%= data.hobbies || '' %></div>
+    </div>
+    <div class="col">
+      <label>Gender:</label>
+      <div class="value"><%= data.gender || '' %></div>
+    </div>
+  </div>
+
+  <h2>14. Address Details</h2>
+  <div class="row">
+    <div class="col">
+      <label>Permanent Address:</label>
+      <div class="textarea"><%= data.permanent_address || '' %></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col">
+      <label>Correspondence Address:</label>
+      <div class="textarea"><%= data.correspondence_address || '' %></div>
+    </div>
+  </div>
+
+  <h2>15. Academic Performance</h2>
+  <div class="row">
+    <div class="col">
+      <label>Odd Sem Year:</label>
+      <div class="value"><%= data.odd_sem_year || '' %></div>
+    </div>
+    <div class="col">
+      <label>Odd Sem Marks:</label>
+      <div class="value"><%= data.odd_sem_marks || '' %></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col">
+      <label>Even Sem Year:</label>
+      <div class="value"><%= data.even_sem_year || '' %></div>
+    </div>
+    <div class="col">
+      <label>Even Sem Marks:</label>
+      <div class="value"><%= data.even_sem_marks || '' %></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col">
+      <label>Back Papers:</label>
+      <div class="value"><%= data.back_papers || '' %></div>
+    </div>
+  </div>
+
+  <h2>Aspirations & Help</h2>
+  <div class="row">
+    <div class="col">
+      <label>16. Career Aspirations:</label>
+      <div class="textarea"><%= data.career_aspirations || '' %></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col">
+      <label>17. Institute Help Needed:</label>
+      <div class="textarea"><%= data.institute_help || '' %></div>
+    </div>
+  </div>
+
+  <h2>Mentor Section</h2>
+  <div class="row">
+    <div class="col">
+      <label>18. Personal Problems:</label>
+      <div class="textarea"><%= data.personal_problems || '' %></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col">
+      <label>19. Professional Problems:</label>
+      <div class="textarea"><%= data.professional_problems || '' %></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col">
+      <label>20. Disciplinary Record:</label>
+      <div class="value"><%= data.disciplinary_record || '' %></div>
+    </div>
+  </div>
+
+  <div class="signature-section">
+    <div class="signature-box">Signature of Student</div>
+    <div class="signature-box">Signature of Mentor</div>
+    <div class="signature-box">Signature of Dy. Dean (FCI)</div>
+  </div>
+</body>
+</html>
+

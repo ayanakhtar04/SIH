@@ -24,6 +24,7 @@ model User {
   meetings     Meeting[]
   notificationLogs NotificationLog[] @relation("NotificationLogCreatedBy")
   createdPlaybookAssignments StudentPlaybookAssignment[] @relation("MentorAssignments")
+  mentorForm   MentorForm?
 }
 
 model Student {
@@ -51,6 +52,7 @@ model Student {
   mentorNotes MentorNote[]
   meetings Meeting[]
   notificationLogs NotificationLog[]
+  menteeForm        MenteeForm?
 }
 
 model SignupToken {
@@ -153,4 +155,24 @@ model RiskModelConfig {
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+// Mentor–Mentee onboarding form storage
+model MenteeForm {
+  id         String   @id @default(cuid())
+  student    Student  @relation(fields: [studentId], references: [id])
+  studentId  String   @unique
+  data       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// Mentor profile/onboarding form storage
+model MentorForm {
+  id        String   @id @default(cuid())
+  mentor    User     @relation(fields: [mentorId], references: [id])
+  mentorId  String   @unique
+  data      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

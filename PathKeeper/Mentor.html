@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mentee Registration Form</title>
+    <style>
+        /* Basic CSS for Form Structure and Appearance */
+        body { font-family: Arial, sans-serif; background-color: #f8f8f8; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); border-top: 5px solid #007bff; }
+        h1 { text-align: center; color: #333; margin-bottom: 25px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; font-size: 0.95em; }
+        .form-group { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed #eee; }
+        input[type="text"], input[type="email"], textarea, select { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        .inline-group { display: flex; gap: 20px; }
+        .inline-group > div { flex: 1; }
+        .checkbox-group { display: flex; align-items: center; gap: 20px; margin-bottom: 15px; }
+        .checkbox-group label { font-weight: normal; display: flex; align-items: center; gap: 5px; }
+        .academic-section { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 20px; }
+        .signature-section { display: flex; justify-content: space-around; margin-top: 40px; padding-top: 20px; border-top: 2px solid #ddd; }
+        .signature-box { text-align: center; border-top: 1px solid #000; padding-top: 5px; width: 30%; }
+        .mentor-use { background-color: #f0faff; border: 1px solid #b3e0ff; padding: 15px; border-radius: 5px; margin-top: 20px; }
+        .mentor-use h3 { color: #007bff; margin-top: 0; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Mentee Registration Form</h1>
+    <form action="#" method="POST">
+        
+        <div class="form-group">
+            <label for="name">1. Name of the Student (In CAPITAL):</label>
+            <input type="text" id="name" name="name" required>
+        </div>
+
+        <div class="inline-group">
+            <div class="form-group">
+                <label for="enrollment">2. Enrolment Number:</label>
+                <input type="text" id="enrollment" name="enrollment" required>
+            </div>
+            <div class="form-group">
+                <label for="blood_group">5. Blood Group:</label>
+                <input type="text" id="blood_group" name="blood_group">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="father_name">3. Father's Name (in CAPITAL):</label>
+            <input type="text" id="father_name" name="father_name" required>
+        </div>
+
+        <div class="form-group">
+            <label for="mother_name">4. Mother's Name (in CAPITAL):</label>
+            <input type="text" id="mother_name" name="mother_name" required>
+        </div>
+        
+        <div class="inline-group">
+            <div class="form-group">
+                <label for="student_email">6. Email-id (STUDENT):</label>
+                <input type="email" id="student_email" name="student_email" required>
+            </div>
+            <div class="form-group">
+                <label for="father_email">7. Email-id (FATHER):</label>
+                <input type="email" id="father_email" name="father_email">
+            </div>
+        </div>
+
+        <div class="inline-group">
+            <div class="form-group">
+                <label for="student_mobile">8. Mobile No (STUDENT):</label>
+                <input type="text" id="student_mobile" name="student_mobile" value="+91-" required>
+            </div>
+            <div class="form-group">
+                <label for="father_mobile">9. Mobile No (FATHER):</label>
+                <input type="text" id="father_mobile" name="father_mobile" value="+91-">
+            </div>
+            <div class="form-group">
+                <label for="mother_mobile">10. Mobile No (MOTHER):</label>
+                <input type="text" id="mother_mobile" name="mother_mobile" value="+91-">
+            </div>
+        </div>
+
+        <div class="inline-group">
+            <div class="form-group">
+                <label for="course">11. Course:</label>
+                <input type="text" id="course" name="course" required>
+            </div>
+            <div class="form-group">
+                <label for="branch">12. Branch:</label>
+                <input type="text" id="branch" name="branch" required>
+            </div>
+        </div>
+
+        <div class="inline-group">
+            <div class="form-group">
+                <label for="department">Department:</label>
+                <input type="text" id="department" name="department">
+            </div>
+            <div class="form-group">
+                <label for="semester">Semester:</label>
+                <input type="text" id="semester" name="semester">
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label for="hobbies">13. Hobbies:</label>
+            <input type="text" id="hobbies" name="hobbies">
+        </div>
+
+        <div class="form-group">
+            <label>Gender:</label>
+            <div class="checkbox-group">
+                <label><input type="radio" name="gender" value="male" checked> Male (☑)</label>
+                <label><input type="radio" name="gender" value="female"> Female (☐)</label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <h2>14. Address Details</h2>
+            <label for="permanent_address">Permanent Address:</label>
+            <textarea id="permanent_address" name="permanent_address" rows="3"></textarea>
+
+            <label for="correspondence_address">Corresponds Address:</label>
+            <textarea id="correspondence_address" name="correspondence_address" rows="3"></textarea>
+        </div>
+
+        <div class="form-group">
+            <h2>15. Academic Performance - Marks in the last two Semesters (%)</h2>
+            <div class="academic-section">
+                <div>
+                    <label>A. Odd Sem. (202__)</label>
+                    <input type="text" name="odd_sem_year" placeholder="Year (e.g., 3-4)">
+                    <label>Marks:</label>
+                    <input type="text" name="odd_sem_marks" placeholder="% or CGPA">
+                </div>
+                <div>
+                    <label>B. Even Sem. (202__)</label>
+                    <input type="text" name="even_sem_year" placeholder="Year (e.g., 3-4)">
+                    <label>Marks:</label>
+                    <input type="text" name="even_sem_marks" placeholder="% or CGPA">
+                </div>
+            </div>
+            <label for="back_papers">C. Back Papers (if any):</label>
+            <input type="text" id="back_papers" name="back_papers" placeholder="List the subjects/codes">
+        </div>
+
+        <div class="form-group">
+            <label for="career_aspirations">16. What are your career aspirations?</label>
+            <textarea id="career_aspirations" name="career_aspirations" rows="4"></textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="institute_help">17. How can the institute help you in achieving your aspirations?</label>
+            <textarea id="institute_help" name="institute_help" rows="4"></textarea>
+        </div>
+
+        <div class="mentor-use">
+            <h3>To be filled by the Mentor (Sections 18-20)</h3>
+            
+            <div class="form-group">
+                <label for="personal_problems">18. Personal Problems (if any):</label>
+                <textarea id="personal_problems" name="personal_problems" rows="3"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="professional_problems">19. Professional Problems (if any):</label>
+                <textarea id="professional_problems" name="professional_problems" rows="3"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="disciplinary_record">20. Disciplinary Record (Whether punished for any act of indiscipline):</label>
+                <input type="text" id="disciplinary_record" name="disciplinary_record">
+            </div>
+        </div>
+        
+        <div class="signature-section">
+            <div class="signature-box">
+                <p>Signature of Student (Mentee)</p>
+            </div>
+            <div class="signature-box">
+                <p>Signature of Mentor</p>
+            </div>
+            <div class="signature-box">
+                <p>Signature of Dy. Dean (FCI)</p>
+            </div>
+        </div>
+
+    </form>
+</div>
+
+</body>
+</html>
