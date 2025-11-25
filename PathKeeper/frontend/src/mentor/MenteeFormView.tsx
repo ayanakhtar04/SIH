@@ -33,9 +33,25 @@ const MenteeFormView: React.FC<MenteeFormViewProps> = ({ studentId, onClose }) =
       .finally(() => setLoading(false));
   }, [studentId, session]);
 
-  const downloadPdf = () => {
+  const downloadPdf = async () => {
     if (!session?.token) return;
-    window.open(`${API_BASE}/mentee-form/${studentId}/pdf`, '_blank');
+    try {
+      const res = await fetch(`${API_BASE}/mentee-form/${studentId}/pdf`, {
+        headers: { Authorization: `Bearer ${session.token}` }
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `mentee-form-${studentId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (e) {
+      alert('Failed to download PDF');
+    }
   };
 
   if (loading) return <Box p={3}><CircularProgress /></Box>;
@@ -71,6 +87,7 @@ const MenteeFormView: React.FC<MenteeFormViewProps> = ({ studentId, onClose }) =
             <Field label="Name" value={data.name} />
             <Field label="Enrollment No" value={data.enrollment} />
             <Field label="Blood Group" value={data.blood_group} />
+            <Field label="Date of Birth" value={data.dob} />
             <Field label="Gender" value={data.gender} />
             <Field label="Hobbies" value={data.hobbies} />
           </Stack>

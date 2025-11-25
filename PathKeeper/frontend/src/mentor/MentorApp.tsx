@@ -28,6 +28,7 @@ import AssignmentsPage from './AssignmentsPage';
 import NotificationModal from './NotificationModal';
 import MentorForm from './MentorForm';
 import MenteeFormView from './MenteeFormView';
+import MenteeFormsList from './MenteeFormsList';
 import { API } from '../api';
 import { assessDropout } from './student360Api';
 
@@ -903,7 +904,7 @@ const MentorApp: React.FC = () => {
       case 'assignments':
         return <AssignmentsPage />;
       case 'mentor-form':
-        return <MentorForm />;
+        return <MenteeFormsList students={students} />;
       case 'profile':
         return <ProfilePage />;
       case 'settings':

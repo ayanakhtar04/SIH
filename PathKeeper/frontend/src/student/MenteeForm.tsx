@@ -1,18 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Button, Stack } from '@mui/material';
+import { 
+  Box, Button, Stack, TextField, Typography, Paper, Grid, 
+  FormControl, FormLabel, RadioGroup, FormControlLabel, Radio,
+  Container, Alert, CircularProgress
+} from '@mui/material';
 import { useAuth } from '../auth/AuthContext';
 import { API_BASE } from '../api';
-import './MenteeForm.css';
 
 const endpoint = `${API_BASE}/mentee-form`;
 
-const MenteeForm: React.FC = () => {
+interface MenteeFormProps {
+  studentId?: string;
+  isMentor?: boolean;
+  onClose?: () => void;
+}
+
+const MenteeForm: React.FC<MenteeFormProps> = ({ studentId: propStudentId, isMentor = false, onClose }) => {
   const { session } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
   const [form, setForm] = useState<any>({
-    name: '', enrollment: '', blood_group: '', father_name: '', mother_name: '',
-    student_email: '', father_email: '', student_mobile: '+91-', father_mobile: '+91-', mother_mobile: '+91-',
+    name: '', enrollment: '', blood_group: '', dob: '', father_name: '', mother_name: '',
+    student_email: '', father_email: '', student_mobile: '', father_mobile: '', mother_mobile: '',
     course: '', branch: '', department: '', semester: '', hobbies: '', gender: 'male',
     permanent_address: '', correspondence_address: '',
     odd_sem_year: '', odd_sem_marks: '', even_sem_year: '', even_sem_marks: '', back_papers: '',
@@ -20,211 +32,308 @@ const MenteeForm: React.FC = () => {
     personal_problems: '', professional_problems: '', disciplinary_record: ''
   });
 
+  const [targetStudentId, setTargetStudentId] = useState<string | null>(null);
+
   useEffect(() => {
     if (!session) return;
-    const token = session.token;
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
-      const studentId = payload.sub;
-      fetch(`${endpoint}/${studentId}`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => { if (!r.ok) throw new Error('no form'); return r.json(); })
+    let sid = propStudentId;
+    if (!sid) {
+      try {
+        const payload = JSON.parse(atob(session.token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+        sid = payload.sub;
+      } catch (e) { /* ignore */ }
+    }
+    setTargetStudentId(sid || null);
+
+    if (sid) {
+      setFetching(true);
+      fetch(`${endpoint}/${sid}`, { headers: { Authorization: `Bearer ${session.token}` } })
+        .then(r => { 
+            if (!r.ok) {
+                // If 404, it might just mean no form exists yet, which is fine.
+                if(r.status === 404) return { data: {} };
+                throw new Error('Failed to load form'); 
+            }
+            return r.json(); 
+        })
         .then(j => { 
           if (j.data) setForm((prev:any) => ({ ...prev, ...j.data })); 
-          setSaved(true); 
+          if (j.data && Object.keys(j.data).length > 0) setSaved(true);
         })
-        .catch(() => {})
-    } catch (e) { /* ignore */ }
-  }, [session]);
+        .catch((err) => {
+            console.error(err);
+            setError("Could not load existing form data.");
+        })
+        .finally(() => setFetching(false));
+    } else {
+        setFetching(false);
+    }
+  }, [session, propStudentId]);
 
-  const change = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const change = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setForm((p:any) => ({ ...p, [name]: value }));
+    if (['student_mobile', 'father_mobile', 'mother_mobile'].includes(name)) {
+      const numeric = value.replace(/\D/g, '').slice(0, 10);
+      setForm((p:any) => ({ ...p, [name]: numeric }));
+    } else {
+      setForm((p:any) => ({ ...p, [name]: value }));
+    }
   };
 
   const submit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!session) return;
+    if (!session || !targetStudentId) return;
     setLoading(true);
+    setError(null);
     const token = session.token;
-    const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(form) });
-    if (!res.ok) { alert('Save failed'); setLoading(false); return; }
-    setSaved(true); setLoading(false);
-    alert('Form saved');
+    
+    const url = isMentor ? `${endpoint}/${targetStudentId}` : endpoint;
+
+    try {
+        const res = await fetch(url, { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, 
+            body: JSON.stringify(form) 
+        });
+        if (!res.ok) throw new Error('Save failed');
+        setSaved(true);
+        alert('Form saved successfully');
+        if (onClose) onClose();
+    } catch (err) {
+        setError('Failed to save form.');
+    } finally {
+        setLoading(false);
+    }
   };
 
+  const downloadPdf = async () => {
+      if(!session?.token || !targetStudentId) return;
+      try {
+        const res = await fetch(`${API_BASE}/mentee-form/${targetStudentId}/pdf`, {
+          headers: { Authorization: `Bearer ${session.token}` }
+        });
+        if (!res.ok) throw new Error('Download failed');
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `mentee-form-${targetStudentId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } catch(e) { alert('Failed to download PDF'); }
+  };
+
+  const isStudentFieldDisabled = isMentor;
+  const isMentorFieldDisabled = !isMentor;
+
+  if (fetching) return <Box sx={{ display:'flex', justifyContent:'center', p: 5 }}><CircularProgress /></Box>;
+
   return (
-    <div className="mentee-form-container">
-      <div className="mentee-form-wrapper">
-        <h1>Mentee Registration Form</h1>
+    <Container maxWidth="md" sx={{ py: 4 }}>
+      <Paper elevation={3} sx={{ p: 4, borderRadius: 2 }}>
+        <Typography variant="h4" align="center" gutterBottom sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+          Mentee Registration Form
+        </Typography>
+        
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
         <form onSubmit={submit}>
-          
-          <div className="mentee-form-group">
-            <label htmlFor="name">1. Name of the Student (In CAPITAL):</label>
-            <input type="text" id="name" name="name" value={form.name} onChange={change} required />
-          </div>
-
-          <div className="mentee-form-inline-group">
-            <div className="mentee-form-group">
-              <label htmlFor="enrollment">2. Enrolment Number:</label>
-              <input type="text" id="enrollment" name="enrollment" value={form.enrollment} onChange={change} required />
-            </div>
-            <div className="mentee-form-group">
-              <label htmlFor="blood_group">5. Blood Group:</label>
-              <input type="text" id="blood_group" name="blood_group" value={form.blood_group} onChange={change} />
-            </div>
-          </div>
-
-          <div className="mentee-form-group">
-            <label htmlFor="father_name">3. Father's Name (in CAPITAL):</label>
-            <input type="text" id="father_name" name="father_name" value={form.father_name} onChange={change} required />
-          </div>
-
-          <div className="mentee-form-group">
-            <label htmlFor="mother_name">4. Mother's Name (in CAPITAL):</label>
-            <input type="text" id="mother_name" name="mother_name" value={form.mother_name} onChange={change} required />
-          </div>
-          
-          <div className="mentee-form-inline-group">
-            <div className="mentee-form-group">
-              <label htmlFor="student_email">6. Email-id (STUDENT):</label>
-              <input type="email" id="student_email" name="student_email" value={form.student_email} onChange={change} required />
-            </div>
-            <div className="mentee-form-group">
-              <label htmlFor="father_email">7. Email-id (FATHER):</label>
-              <input type="email" id="father_email" name="father_email" value={form.father_email} onChange={change} />
-            </div>
-          </div>
-
-          <div className="mentee-form-inline-group">
-            <div className="mentee-form-group">
-              <label htmlFor="student_mobile">8. Mobile No (STUDENT):</label>
-              <input type="text" id="student_mobile" name="student_mobile" value={form.student_mobile} onChange={change} required />
-            </div>
-            <div className="mentee-form-group">
-              <label htmlFor="father_mobile">9. Mobile No (FATHER):</label>
-              <input type="text" id="father_mobile" name="father_mobile" value={form.father_mobile} onChange={change} />
-            </div>
-            <div className="mentee-form-group">
-              <label htmlFor="mother_mobile">10. Mobile No (MOTHER):</label>
-              <input type="text" id="mother_mobile" name="mother_mobile" value={form.mother_mobile} onChange={change} />
-            </div>
-          </div>
-
-          <div className="mentee-form-inline-group">
-            <div className="mentee-form-group">
-              <label htmlFor="course">11. Course:</label>
-              <input type="text" id="course" name="course" value={form.course} onChange={change} required />
-            </div>
-            <div className="mentee-form-group">
-              <label htmlFor="branch">12. Branch:</label>
-              <input type="text" id="branch" name="branch" value={form.branch} onChange={change} required />
-            </div>
-          </div>
-
-          <div className="mentee-form-inline-group">
-            <div className="mentee-form-group">
-              <label htmlFor="department">Department:</label>
-              <input type="text" id="department" name="department" value={form.department} onChange={change} />
-            </div>
-            <div className="mentee-form-group">
-              <label htmlFor="semester">Semester:</label>
-              <input type="text" id="semester" name="semester" value={form.semester} onChange={change} />
-            </div>
-          </div>
-          
-          <div className="mentee-form-group">
-            <label htmlFor="hobbies">13. Hobbies:</label>
-            <input type="text" id="hobbies" name="hobbies" value={form.hobbies} onChange={change} />
-          </div>
-
-          <div className="mentee-form-group">
-            <label>Gender:</label>
-            <div className="mentee-form-checkbox-group">
-              <label><input type="radio" name="gender" value="male" checked={form.gender === 'male'} onChange={change} /> Male</label>
-              <label><input type="radio" name="gender" value="female" checked={form.gender === 'female'} onChange={change} /> Female</label>
-            </div>
-          </div>
-
-          <div className="mentee-form-group">
-            <h2>14. Address Details</h2>
-            <label htmlFor="permanent_address">Permanent Address:</label>
-            <textarea id="permanent_address" name="permanent_address" rows={3} value={form.permanent_address} onChange={change}></textarea>
-
-            <label htmlFor="correspondence_address">Corresponds Address:</label>
-            <textarea id="correspondence_address" name="correspondence_address" rows={3} value={form.correspondence_address} onChange={change}></textarea>
-          </div>
-
-          <div className="mentee-form-group">
-            <h2>15. Academic Performance - Marks in the last two Semesters (%)</h2>
-            <div className="mentee-form-academic-section">
-              <div>
-                <label>A. Odd Sem. (202__)</label>
-                <input type="text" name="odd_sem_year" placeholder="Year (e.g., 3-4)" value={form.odd_sem_year} onChange={change} />
-                <label>Marks:</label>
-                <input type="text" name="odd_sem_marks" placeholder="% or CGPA" value={form.odd_sem_marks} onChange={change} />
-              </div>
-              <div>
-                <label>B. Even Sem. (202__)</label>
-                <input type="text" name="even_sem_year" placeholder="Year (e.g., 3-4)" value={form.even_sem_year} onChange={change} />
-                <label>Marks:</label>
-                <input type="text" name="even_sem_marks" placeholder="% or CGPA" value={form.even_sem_marks} onChange={change} />
-              </div>
-            </div>
-            <label htmlFor="back_papers">C. Back Papers (if any):</label>
-            <input type="text" id="back_papers" name="back_papers" placeholder="List the subjects/codes" value={form.back_papers} onChange={change} />
-          </div>
-
-          <div className="mentee-form-group">
-            <label htmlFor="career_aspirations">16. What are your career aspirations?</label>
-            <textarea id="career_aspirations" name="career_aspirations" rows={4} value={form.career_aspirations} onChange={change}></textarea>
-          </div>
-          
-          <div className="mentee-form-group">
-            <label htmlFor="institute_help">17. How can the institute help you in achieving your aspirations?</label>
-            <textarea id="institute_help" name="institute_help" rows={4} value={form.institute_help} onChange={change}></textarea>
-          </div>
-
-          <div className="mentee-form-mentor-use">
-            <h3>To be filled by the Mentor (Sections 18-20)</h3>
+          <Stack spacing={3}>
             
-            <div className="mentee-form-group">
-              <label htmlFor="personal_problems">18. Personal Problems (if any):</label>
-              <textarea id="personal_problems" name="personal_problems" rows={3} value={form.personal_problems} onChange={change} disabled></textarea>
-            </div>
+            {/* Section 1: Personal Details */}
+            <Box>
+                <Typography variant="h6" sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>Personal Details</Typography>
+                <Grid container spacing={2}>
+                    <Grid item xs={12}>
+                        <TextField fullWidth label="1. Name of the Student (In CAPITAL)" name="name" value={form.name} onChange={change} required disabled={isStudentFieldDisabled} variant="outlined" />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                        <TextField fullWidth label="2. Enrolment Number" name="enrollment" value={form.enrollment} onChange={change} required disabled={isStudentFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                        <TextField fullWidth label="5. Blood Group" name="blood_group" value={form.blood_group} onChange={change} disabled={isStudentFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                        <TextField fullWidth label="Date of Birth" name="dob" type="date" value={form.dob} onChange={change} disabled={isStudentFieldDisabled} InputLabelProps={{ shrink: true }} />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                        <TextField fullWidth label="3. Father's Name (in CAPITAL)" name="father_name" value={form.father_name} onChange={change} required disabled={isStudentFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                        <TextField fullWidth label="4. Mother's Name (in CAPITAL)" name="mother_name" value={form.mother_name} onChange={change} required disabled={isStudentFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12}>
+                        <FormControl component="fieldset" disabled={isStudentFieldDisabled}>
+                            <FormLabel component="legend">Gender</FormLabel>
+                            <RadioGroup row name="gender" value={form.gender} onChange={change}>
+                                <FormControlLabel value="male" control={<Radio />} label="Male" />
+                                <FormControlLabel value="female" control={<Radio />} label="Female" />
+                            </RadioGroup>
+                        </FormControl>
+                    </Grid>
+                </Grid>
+            </Box>
 
-            <div className="mentee-form-group">
-              <label htmlFor="professional_problems">19. Professional Problems (if any):</label>
-              <textarea id="professional_problems" name="professional_problems" rows={3} value={form.professional_problems} onChange={change} disabled></textarea>
-            </div>
+            {/* Section 2: Contact Details */}
+            <Box>
+                <Typography variant="h6" sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>Contact Details</Typography>
+                <Grid container spacing={2}>
+                    <Grid item xs={12} sm={6}>
+                        <TextField fullWidth label="6. Email-id (STUDENT)" name="student_email" type="email" value={form.student_email} onChange={change} required disabled={isStudentFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                        <TextField fullWidth label="7. Email-id (FATHER)" name="father_email" type="email" value={form.father_email} onChange={change} disabled={isStudentFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                        <TextField fullWidth label="8. Mobile No (STUDENT)" name="student_mobile" value={form.student_mobile} onChange={change} required disabled={isStudentFieldDisabled} inputProps={{ maxLength: 10, inputMode: 'numeric', pattern: '[0-9]*' }} placeholder="10-digit number" />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                        <TextField fullWidth label="9. Mobile No (FATHER)" name="father_mobile" value={form.father_mobile} onChange={change} disabled={isStudentFieldDisabled} inputProps={{ maxLength: 10, inputMode: 'numeric', pattern: '[0-9]*' }} placeholder="10-digit number" />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                        <TextField fullWidth label="10. Mobile No (MOTHER)" name="mother_mobile" value={form.mother_mobile} onChange={change} disabled={isStudentFieldDisabled} inputProps={{ maxLength: 10, inputMode: 'numeric', pattern: '[0-9]*' }} placeholder="10-digit number" />
+                    </Grid>
+                </Grid>
+            </Box>
 
-            <div className="mentee-form-group">
-              <label htmlFor="disciplinary_record">20. Disciplinary Record (Whether punished for any act of indiscipline):</label>
-              <input type="text" id="disciplinary_record" name="disciplinary_record" value={form.disciplinary_record} onChange={change} disabled />
-            </div>
-          </div>
-          
-          <div className="mentee-form-signature-section">
-            <div className="mentee-form-signature-box">
-              <p>Signature of Student (Mentee)</p>
-            </div>
-            <div className="mentee-form-signature-box">
-              <p>Signature of Mentor</p>
-            </div>
-            <div className="mentee-form-signature-box">
-              <p>Signature of Dy. Dean (FCI)</p>
-            </div>
-          </div>
+            {/* Section 3: Academic Details */}
+            <Box>
+                <Typography variant="h6" sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>Academic Details</Typography>
+                <Grid container spacing={2}>
+                    <Grid item xs={12} sm={6}>
+                        <TextField fullWidth label="11. Course" name="course" value={form.course} onChange={change} required disabled={isStudentFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                        <TextField fullWidth label="12. Branch" name="branch" value={form.branch} onChange={change} required disabled={isStudentFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                        <TextField fullWidth label="Department" name="department" value={form.department} onChange={change} disabled={isStudentFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                        <TextField fullWidth label="Semester" name="semester" value={form.semester} onChange={change} disabled={isStudentFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12}>
+                        <TextField fullWidth label="13. Hobbies" name="hobbies" value={form.hobbies} onChange={change} disabled={isStudentFieldDisabled} />
+                    </Grid>
+                </Grid>
+            </Box>
 
-          <Stack direction="row" spacing={2} justifyContent="center" sx={{ mt: 4 }}>
-            <Button variant="contained" type="submit" disabled={loading}>{loading ? 'Saving…' : 'Save Form'}</Button>
-            {saved && <Button variant="outlined" onClick={()=>{ if(!session) return; try { const payload = JSON.parse(atob(session.token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); const studentId = payload.sub; window.open(`${API_BASE}/mentee-form/${studentId}/pdf`, '_blank'); } catch(e){} }}>Download PDF</Button>}
+            {/* Section 4: Address Details */}
+            <Box>
+                <Typography variant="h6" sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>14. Address Details</Typography>
+                <Grid container spacing={2}>
+                    <Grid item xs={12}>
+                        <TextField fullWidth multiline rows={3} label="Permanent Address" name="permanent_address" value={form.permanent_address} onChange={change} disabled={isStudentFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12}>
+                        <TextField fullWidth multiline rows={3} label="Correspondence Address" name="correspondence_address" value={form.correspondence_address} onChange={change} disabled={isStudentFieldDisabled} />
+                    </Grid>
+                </Grid>
+            </Box>
+
+            {/* Section 5: Academic Performance */}
+            <Box>
+                <Typography variant="h6" sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>15. Academic Performance (Last 2 Semesters)</Typography>
+                <Grid container spacing={2}>
+                    <Grid item xs={12} sm={6}>
+                        <Paper variant="outlined" sx={{ p: 2 }}>
+                            <Typography variant="subtitle2" gutterBottom>A. Odd Sem. (202__)</Typography>
+                            <Stack spacing={2}>
+                                <TextField fullWidth size="small" label="Year (e.g., 3-4)" name="odd_sem_year" value={form.odd_sem_year} onChange={change} disabled={isStudentFieldDisabled} />
+                                <TextField fullWidth size="small" label="Marks (% or CGPA)" name="odd_sem_marks" value={form.odd_sem_marks} onChange={change} disabled={isStudentFieldDisabled} />
+                            </Stack>
+                        </Paper>
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                        <Paper variant="outlined" sx={{ p: 2 }}>
+                            <Typography variant="subtitle2" gutterBottom>B. Even Sem. (202__)</Typography>
+                            <Stack spacing={2}>
+                                <TextField fullWidth size="small" label="Year (e.g., 3-4)" name="even_sem_year" value={form.even_sem_year} onChange={change} disabled={isStudentFieldDisabled} />
+                                <TextField fullWidth size="small" label="Marks (% or CGPA)" name="even_sem_marks" value={form.even_sem_marks} onChange={change} disabled={isStudentFieldDisabled} />
+                            </Stack>
+                        </Paper>
+                    </Grid>
+                    <Grid item xs={12}>
+                        <TextField fullWidth label="C. Back Papers (if any)" placeholder="List the subjects/codes" name="back_papers" value={form.back_papers} onChange={change} disabled={isStudentFieldDisabled} />
+                    </Grid>
+                </Grid>
+            </Box>
+
+            {/* Section 6: Aspirations */}
+            <Box>
+                <Typography variant="h6" sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>Aspirations</Typography>
+                <Grid container spacing={2}>
+                    <Grid item xs={12}>
+                        <TextField fullWidth multiline rows={4} label="16. What are your career aspirations?" name="career_aspirations" value={form.career_aspirations} onChange={change} disabled={isStudentFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12}>
+                        <TextField fullWidth multiline rows={4} label="17. How can the institute help you in achieving your aspirations?" name="institute_help" value={form.institute_help} onChange={change} disabled={isStudentFieldDisabled} />
+                    </Grid>
+                </Grid>
+            </Box>
+
+            {/* Section 7: Mentor Section */}
+            <Paper variant="outlined" sx={{ p: 3, bgcolor: 'action.hover', borderColor: 'primary.main' }}>
+                <Typography variant="h6" color="primary" sx={{ mb: 2 }}>To be filled by the Mentor (Sections 18-20)</Typography>
+                <Grid container spacing={2}>
+                    <Grid item xs={12}>
+                        <TextField fullWidth multiline rows={3} label="18. Personal Problems (if any)" name="personal_problems" value={form.personal_problems} onChange={change} disabled={isMentorFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12}>
+                        <TextField fullWidth multiline rows={3} label="19. Professional Problems (if any)" name="professional_problems" value={form.professional_problems} onChange={change} disabled={isMentorFieldDisabled} />
+                    </Grid>
+                    <Grid item xs={12}>
+                        <TextField fullWidth label="20. Disciplinary Record" placeholder="Whether punished for any act of indiscipline" name="disciplinary_record" value={form.disciplinary_record} onChange={change} disabled={isMentorFieldDisabled} />
+                    </Grid>
+                </Grid>
+            </Paper>
+
+            {/* Signatures */}
+            <Box sx={{ mt: 4, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                <Grid container spacing={4} justifyContent="space-around">
+                    <Grid item xs={4} sx={{ textAlign: 'center' }}>
+                        <Box sx={{ borderTop: 1, borderColor: 'text.primary', pt: 1, mt: 4 }}>
+                            <Typography variant="body2">Signature of Student (Mentee)</Typography>
+                        </Box>
+                    </Grid>
+                    <Grid item xs={4} sx={{ textAlign: 'center' }}>
+                        <Box sx={{ borderTop: 1, borderColor: 'text.primary', pt: 1, mt: 4 }}>
+                            <Typography variant="body2">Signature of Mentor</Typography>
+                        </Box>
+                    </Grid>
+                    <Grid item xs={4} sx={{ textAlign: 'center' }}>
+                        <Box sx={{ borderTop: 1, borderColor: 'text.primary', pt: 1, mt: 4 }}>
+                            <Typography variant="body2">Signature of Dy. Dean (FCI)</Typography>
+                        </Box>
+                    </Grid>
+                </Grid>
+            </Box>
+
+            <Stack direction="row" spacing={2} justifyContent="center" sx={{ mt: 4 }}>
+                <Button variant="contained" size="large" type="submit" disabled={loading}>
+                    {loading ? 'Saving…' : 'Save Form'}
+                </Button>
+                {saved && targetStudentId && (
+                    <Button variant="outlined" size="large" onClick={downloadPdf}>
+                        Download PDF
+                    </Button>
+                )}
+                {onClose && (
+                    <Button variant="text" size="large" onClick={onClose}>
+                        Close
+                    </Button>
+                )}
+            </Stack>
+
           </Stack>
-
         </form>
-      </div>
-    </div>
-  )
+      </Paper>
+    </Container>
+  );
 }
 
 export default MenteeForm;
+
 
