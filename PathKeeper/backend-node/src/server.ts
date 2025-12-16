@@ -43,7 +43,7 @@ function createServer() {
     },
     credentials: true
   }));
-  app.use(express.json({ limit: '100kb' }));
+  app.use(express.json({ limit: '10mb' }));
   app.use(express.text({ type: 'text/csv', limit: '1mb' }));
   app.use(requestLogger);
   const loginLimiter = rateLimit({

@@ -29,7 +29,8 @@ const MenteeForm: React.FC<MenteeFormProps> = ({ studentId: propStudentId, isMen
     permanent_address: '', correspondence_address: '',
     odd_sem_year: '', odd_sem_marks: '', even_sem_year: '', even_sem_marks: '', back_papers: '',
     career_aspirations: '', institute_help: '',
-    personal_problems: '', professional_problems: '', disciplinary_record: ''
+    personal_problems: '', professional_problems: '', disciplinary_record: '',
+    student_signature: '', mentor_signature: ''
   });
 
   const [targetStudentId, setTargetStudentId] = useState<string | null>(null);
@@ -77,6 +78,17 @@ const MenteeForm: React.FC<MenteeFormProps> = ({ studentId: propStudentId, isMen
       setForm((p:any) => ({ ...p, [name]: numeric }));
     } else {
       setForm((p:any) => ({ ...p, [name]: value }));
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setForm((prev: any) => ({ ...prev, [field]: reader.result }));
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -294,16 +306,43 @@ const MenteeForm: React.FC<MenteeFormProps> = ({ studentId: propStudentId, isMen
             <Box sx={{ mt: 4, pt: 2, borderTop: 1, borderColor: 'divider' }}>
                 <Grid container spacing={4} justifyContent="space-around">
                     <Grid item xs={4} sx={{ textAlign: 'center' }}>
-                        <Box sx={{ borderTop: 1, borderColor: 'text.primary', pt: 1, mt: 4 }}>
+                        <Box sx={{ mb: 2, height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed grey' }}>
+                            {form.student_signature ? (
+                                <img src={form.student_signature} alt="Student Signature" style={{ maxHeight: '100%', maxWidth: '100%' }} />
+                            ) : (
+                                <Typography variant="caption" color="text.secondary">No Signature</Typography>
+                            )}
+                        </Box>
+                        {!isStudentFieldDisabled && (
+                            <Button variant="outlined" component="label" size="small" sx={{ mb: 1 }}>
+                                Upload Signature
+                                <input type="file" hidden accept="image/*" onChange={(e) => handleFileChange(e, 'student_signature')} />
+                            </Button>
+                        )}
+                        <Box sx={{ borderTop: 1, borderColor: 'text.primary', pt: 1 }}>
                             <Typography variant="body2">Signature of Student (Mentee)</Typography>
                         </Box>
                     </Grid>
                     <Grid item xs={4} sx={{ textAlign: 'center' }}>
-                        <Box sx={{ borderTop: 1, borderColor: 'text.primary', pt: 1, mt: 4 }}>
+                        <Box sx={{ mb: 2, height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed grey' }}>
+                            {form.mentor_signature ? (
+                                <img src={form.mentor_signature} alt="Mentor Signature" style={{ maxHeight: '100%', maxWidth: '100%' }} />
+                            ) : (
+                                <Typography variant="caption" color="text.secondary">No Signature</Typography>
+                            )}
+                        </Box>
+                        {!isMentorFieldDisabled && (
+                            <Button variant="outlined" component="label" size="small" sx={{ mb: 1 }}>
+                                Upload Signature
+                                <input type="file" hidden accept="image/*" onChange={(e) => handleFileChange(e, 'mentor_signature')} />
+                            </Button>
+                        )}
+                        <Box sx={{ borderTop: 1, borderColor: 'text.primary', pt: 1 }}>
                             <Typography variant="body2">Signature of Mentor</Typography>
                         </Box>
                     </Grid>
                     <Grid item xs={4} sx={{ textAlign: 'center' }}>
+                        <Box sx={{ height: 100 }} /> {/* Spacer for alignment */}
                         <Box sx={{ borderTop: 1, borderColor: 'text.primary', pt: 1, mt: 4 }}>
                             <Typography variant="body2">Signature of Dy. Dean (FCI)</Typography>
                         </Box>

@@ -194,12 +194,23 @@
         
         <div class="signature-section">
             <div class="signature-box">
+                <% if (data.student_signature) { %>
+                    <img src="<%= data.student_signature %>" alt="Student Signature" style="max-height: 60px; max-width: 100%;">
+                <% } else { %>
+                    <div style="height: 60px;"></div>
+                <% } %>
                 <p>Signature of Student (Mentee)</p>
             </div>
             <div class="signature-box">
+                <% if (data.mentor_signature) { %>
+                    <img src="<%= data.mentor_signature %>" alt="Mentor Signature" style="max-height: 60px; max-width: 100%;">
+                <% } else { %>
+                    <div style="height: 60px;"></div>
+                <% } %>
                 <p>Signature of Mentor</p>
             </div>
             <div class="signature-box">
+                <div style="height: 60px;"></div>
                 <p>Signature of Dy. Dean (FCI)</p>
             </div>
         </div>
