@@ -16,7 +16,9 @@ import TaskAltIcon from '@mui/icons-material/TaskAlt';
 import Groups2Icon from '@mui/icons-material/Groups2';
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useAuth } from '../auth/AuthContext';
-import { API } from '../api';
+import { API, API_BASE } from '../api';
+import MenteeForm from './MenteeForm';
+import MentorProfileView from './MentorProfileView';
 import { fetchMy360, Student360Data } from '../mentor/student360Api';
 
 // Synthetic fallbacks (performance history & courses) until backend provides richer student metrics
@@ -317,7 +319,7 @@ const StudentApp: React.FC<StudentAppProps> = ({ logout }) => {
   const { dark, toggleDark } = useDarkMode();
   const { session } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [page, setPage] = useState<'dashboard' | 'profile' | 'settings'>('dashboard');
+  const [page, setPage] = useState<'dashboard' | 'profile' | 'settings' | 'form' | 'mentor-profile'>('dashboard');
   const [student, setStudent] = useState<ViewStudent | null>(null);
   const [attendanceSeries, setAttendanceSeries] = useState<{ month:string; pct:number }[]>(fallbackAttendanceHistory);
   const [interventions, setInterventions] = useState<{ date:string; text:string }[]>(fallbackInterventions);
@@ -386,6 +388,17 @@ const StudentApp: React.FC<StudentAppProps> = ({ logout }) => {
           lastRiskUpdated: s.lastRiskUpdated ?? null,
           mentorId: s.mentorId ?? null
         });
+        // Check whether mentee form exists; if not, force form page for first-login students
+        try {
+          if (s.id) {
+            const token = session?.token;
+            if (token) {
+              fetch(`${API_BASE}/mentee-form/${s.id}`, { headers: { Authorization: `Bearer ${token}` } })
+                .then(r => { if (r.status === 404) setPage('form'); })
+                .catch(() => {});
+            }
+          }
+        } catch {}
         setRawRows(mappedRows);
         setInterventions(mappedInterventions);
         setAttendanceSeries(series);
@@ -427,6 +440,8 @@ const StudentApp: React.FC<StudentAppProps> = ({ logout }) => {
   const renderPage = () => {
     if (!student) return null;
     switch (page) {
+      case 'form': return <MenteeForm />;
+      case 'mentor-profile': return <MentorProfileView mentorId={student.mentorId} />;
       case 'dashboard': return <DashboardPage student={student} attendanceSeries={attendanceSeries} interventions={interventions} rawRows={rawRows} />;
       case 'profile': return <ProfilePage student={student} />;
       case 'settings': return <SettingsPage dark={dark} onToggleDark={toggleDark} />;
@@ -452,6 +467,8 @@ const StudentApp: React.FC<StudentAppProps> = ({ logout }) => {
           <NavBtn active={page === 'dashboard'} icon={<DashboardIcon fontSize="small" />} label="Dashboard" onClick={() => setPage('dashboard')} open={sidebarOpen} />
           <NavBtn active={page === 'profile'} icon={<PersonIcon fontSize="small" />} label="Profile" onClick={() => setPage('profile')} open={sidebarOpen} />
           <NavBtn active={page === 'settings'} icon={<SettingsIcon fontSize="small" />} label="Settings" onClick={() => setPage('settings')} open={sidebarOpen} />
+          <NavBtn active={page === 'form'} icon={<TaskAltIcon fontSize="small" />} label="Mentee Form" onClick={() => setPage('form')} open={sidebarOpen} />
+          <NavBtn active={page === 'mentor-profile'} icon={<SchoolIcon fontSize="small" />} label="My Mentor" onClick={() => setPage('mentor-profile')} open={sidebarOpen} />
         </Stack>
         <Divider />
         <Stack spacing={1.2} sx={{ p: 1.2 }}>

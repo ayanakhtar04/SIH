@@ -31,6 +31,7 @@ venv/
 
 # ---- Databases / Prisma ----
 *.db
+!PathKeeper/student_data.db
 *.db-journal
 .prisma/
 

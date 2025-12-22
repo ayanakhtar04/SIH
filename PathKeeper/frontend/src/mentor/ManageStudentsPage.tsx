@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Box, Paper, Typography, IconButton, Drawer, Stack, TextField, Button, Chip, Divider, Tooltip, Table, TableHead, TableRow, TableCell, TableBody, TableContainer, TableSortLabel, Select, MenuItem, FormControl, Checkbox } from '@mui/material';
+import { Box, Paper, Typography, IconButton, Drawer, Stack, TextField, Button, Chip, Divider, Tooltip, Table, TableHead, TableRow, TableCell, TableBody, TableContainer, TableSortLabel, Select, MenuItem, FormControl, Checkbox, InputLabel } from '@mui/material';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import EditIcon from '@mui/icons-material/Edit';
@@ -18,6 +19,7 @@ interface StudentRow {
   id:string; name:string; email:string; riskScore?:number; riskTier?:string;
   attendancePercent?:number; cgpa?:number; assignmentsCompleted?:number; assignmentsTotal?:number;
   subjects?: { name:string; score?:number }[]; mentorAcademicNote?:string; mentorId?:string|null;
+  program?: string; year?: string;
 }
 
 interface Props { token:string; onRiskUpdated?: (id:string, riskScore:number, riskTier:string)=>void; }
@@ -37,6 +39,24 @@ const ManageStudentsPage: React.FC<Props> = ({ token, onRiskUpdated }) => {
   const [bulkMode, setBulkMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  // Filters
+  const [filters, setFilters] = useState({
+    department: 'All',
+    program: 'All',
+    year: 'All',
+    semester: 'All',
+    section: 'All',
+  });
+  const DEPARTMENTS = ['CSE', 'ECE', 'ME', 'CE', 'EE'];
+  const PROGRAMS = ['B.Tech', 'M.Tech', 'BCA', 'MCA'];
+  const YEARS = ['1', '2', '3', '4'];
+  const SEMESTERS = ['1', '2', '3', '4', '5', '6', '7', '8'];
+  const SECTIONS = ['A', 'B', 'C', 'D'];
+
+  const handleFilterChange = (field: string, value: string) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+  };
+
   // decode role from token (simple client-side decode without validation) to determine admin controls
   const role = (()=> { try { const p = JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); return p.role || p.user?.role; } catch { return undefined; } })();
 
@@ -50,7 +70,8 @@ const ManageStudentsPage: React.FC<Props> = ({ token, onRiskUpdated }) => {
           id:s.id, name:s.name, email:s.email, riskScore:s.riskScore, riskTier:s.riskTier,
           attendancePercent:s.attendancePercent, cgpa:s.cgpa,
           assignmentsCompleted:s.assignmentsCompleted, assignmentsTotal:s.assignmentsTotal,
-          subjects:s.subjects, mentorAcademicNote:s.mentorAcademicNote, mentorId:s.mentorId ?? null
+          subjects:s.subjects, mentorAcademicNote:s.mentorAcademicNote, mentorId:s.mentorId ?? null,
+          program: s.program, year: s.year
         }));
         setRows(mapped);
       })
@@ -72,10 +93,25 @@ const ManageStudentsPage: React.FC<Props> = ({ token, onRiskUpdated }) => {
   useEffect(()=> { fetchStudents(); fetchMentors(); }, []);
 
   const filtered = useMemo(()=> {
+    let list = rows;
+    // Apply hierarchical filters
+    if (filters.department !== 'All') {
+      list = list.filter(r => r.program && r.program.includes(filters.department));
+    }
+    if (filters.program !== 'All') {
+      list = list.filter(r => r.program && r.program.includes(filters.program));
+    }
+    if (filters.year !== 'All') {
+      list = list.filter(r => r.year && String(r.year) === filters.year);
+    }
+    // Semester and Section are not yet in backend, so we skip filtering by them for now to avoid empty lists
+    // if (filters.semester !== 'All') ...
+    // if (filters.section !== 'All') ...
+
     const needle = search.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter(r => r.name.toLowerCase().includes(needle) || r.email.toLowerCase().includes(needle) || (r.riskTier||'').toLowerCase().includes(needle));
-  }, [rows, search]);
+    if (!needle) return list;
+    return list.filter(r => r.name.toLowerCase().includes(needle) || r.email.toLowerCase().includes(needle) || (r.riskTier||'').toLowerCase().includes(needle));
+  }, [rows, search, filters]);
 
   const sorted = useMemo(()=> {
     const list = [...filtered];
@@ -173,6 +209,51 @@ const ManageStudentsPage: React.FC<Props> = ({ token, onRiskUpdated }) => {
           <input value={search} onChange={e=> setSearch(e.target.value)} placeholder="Search name/email/risk..." style={{ width:'100%', padding:'8px 10px 8px 28px', borderRadius:8, outline:'none', border:'1px solid rgba(0,0,0,0.25)', background:'transparent', color:'inherit' }} />
         </Box>
       </Stack>
+
+      <Paper elevation={0} sx={{ p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="center" flexWrap="wrap">
+          <FilterListIcon color="action" />
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Department</InputLabel>
+            <Select value={filters.department} label="Department" onChange={(e) => handleFilterChange('department', e.target.value)}>
+              <MenuItem value="All">All</MenuItem>
+              {DEPARTMENTS.map(d => <MenuItem key={d} value={d}>{d}</MenuItem>)}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Program</InputLabel>
+            <Select value={filters.program} label="Program" onChange={(e) => handleFilterChange('program', e.target.value)}>
+              <MenuItem value="All">All</MenuItem>
+              {PROGRAMS.map(p => <MenuItem key={p} value={p}>{p}</MenuItem>)}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 100 }}>
+            <InputLabel>Year</InputLabel>
+            <Select value={filters.year} label="Year" onChange={(e) => handleFilterChange('year', e.target.value)}>
+              <MenuItem value="All">All</MenuItem>
+              {YEARS.map(y => <MenuItem key={y} value={y}>{y}</MenuItem>)}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 100 }}>
+            <InputLabel>Semester</InputLabel>
+            <Select value={filters.semester} label="Semester" onChange={(e) => handleFilterChange('semester', e.target.value)}>
+              <MenuItem value="All">All</MenuItem>
+              {SEMESTERS.map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 100 }}>
+            <InputLabel>Section</InputLabel>
+            <Select value={filters.section} label="Section" onChange={(e) => handleFilterChange('section', e.target.value)}>
+              <MenuItem value="All">All</MenuItem>
+              {SECTIONS.map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+            </Select>
+          </FormControl>
+          <Button variant="text" onClick={() => setFilters({ department: 'All', program: 'All', year: 'All', semester: 'All', section: 'All' })}>
+            Reset
+          </Button>
+        </Stack>
+      </Paper>
+
       {/* Charts removed from this page; they live in the Mentor Dashboard */}
       {error && <Typography variant="caption" color="error">{error}</Typography>}
       {loading && <Typography variant="caption">Loading...</Typography>}

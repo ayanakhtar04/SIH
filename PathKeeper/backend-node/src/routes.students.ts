@@ -5,10 +5,11 @@ import { authRequired, AuthedRequest } from './auth/middleware';
 import { listStudents } from './store/studentStore';
 import { isCounselor, isAdmin, isMentor } from './auth/roles';
 import multer from 'multer';
-import { parseAndValidateCSV } from './util/csvImport';
+import { parseAndValidateCSV, validateStudentRecords, RawStudentRow } from './util/csvImport';
 import { prisma } from './prisma/client';
 import { deriveRiskTierFor } from './util/risk';
 import crypto from 'crypto';
+import * as xlsx from 'xlsx';
 
 // Runtime column ensure (for environments where migration failed) – SQLite only
 async function ensureAcademicColumns() {
@@ -373,25 +374,38 @@ studentsRouter.post('/import', authRequired, importLimiter, upload.single('file'
   await ensureAcademicColumns();
   await ensureRiskSnapshotTable();
 
-  // Determine CSV source: multipart file OR raw text/csv body
-  let csvContent: string | undefined;
+  // Determine source: multipart file OR raw text/csv body
+  let parsed: any;
+  // Gather existing codes/emails for duplicate detection
+  const existingStudents = await prisma.student.findMany({ select: { studentCode: true, email: true } });
+  const existingCodes = new Set(existingStudents.map(s => s.studentCode));
+  const existingEmails = new Set(existingStudents.map(s => s.email.toLowerCase()));
+
   if (req.file) {
-    csvContent = req.file.buffer.toString('utf8');
+    const isExcel = req.file.mimetype.includes('spreadsheet') || req.file.mimetype.includes('excel') || req.file.originalname.match(/\.xlsx?$/i);
+    if (isExcel) {
+      try {
+        const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        const records = xlsx.utils.sheet_to_json<RawStudentRow>(workbook.Sheets[sheetName]);
+        parsed = validateStudentRecords(records, { existingCodes, existingEmails });
+      } catch (e) {
+        return res.status(400).json({ ok: false, error: 'Failed to parse Excel file', status: 400 });
+      }
+    } else {
+      // Assume CSV
+      const csvContent = req.file.buffer.toString('utf8');
+      parsed = parseAndValidateCSV(csvContent, { existingCodes, existingEmails });
+    }
   } else if (req.is('text/csv') && typeof req.body === 'string') {
-    csvContent = req.body;
-  }
-  if (!csvContent) {
+    parsed = parseAndValidateCSV(req.body, { existingCodes, existingEmails });
+  } else {
     return res.status(400).json({ ok: false, error: 'Missing file or text/csv body', status: 400 });
   }
 
   // dryRun can come from query (?dryRun=false) or form field/body
   const dryRunParam = (req.query.dryRun ?? (typeof req.body === 'object' ? (req.body as any)?.dryRun : undefined));
   const dryRun = String(dryRunParam != null ? dryRunParam : (req.file ? req.body?.dryRun : 'true')).toLowerCase() === 'true';
-  // Gather existing codes/emails for duplicate detection
-  const existingStudents = await prisma.student.findMany({ select: { studentCode: true, email: true } });
-  const existingCodes = new Set(existingStudents.map(s => s.studentCode));
-  const existingEmails = new Set(existingStudents.map(s => s.email.toLowerCase()));
-  const parsed = parseAndValidateCSV(csvContent, { existingCodes, existingEmails });
   parsed.dryRun = dryRun;
   if (parsed.errors.length) {
     return res.status(200).json(parsed); // Return validation feedback even if errors

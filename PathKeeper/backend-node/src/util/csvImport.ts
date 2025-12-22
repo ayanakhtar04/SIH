@@ -44,13 +44,7 @@ interface ValidateOptions {
   existingEmails: Set<string>;
 }
 
-export function parseAndValidateCSV(csv: string, opts: ValidateOptions): ImportResult {
-  const records: RawStudentRow[] = parse(csv, {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true
-  });
-
+export function validateStudentRecords(records: RawStudentRow[], opts: ValidateOptions): ImportResult {
   const errors: { line: number; error: string }[] = [];
   const rows: ParsedStudentRow[] = [];
   const seenCodes = new Set<string>();
@@ -104,7 +98,7 @@ export function parseAndValidateCSV(csv: string, opts: ValidateOptions): ImportR
       const at = Number(rec.assignmentsTotal);
       if (!Number.isNaN(at) && at >= 0) assignmentsTotal = at; else rowErrors.push('Invalid assignmentsTotal');
     }
-    const subjectsArr: string[] | null = rec.subjects ? rec.subjects.split(/[;,]/).map(s=> s.trim()).filter(Boolean).slice(0,50) : null;
+    const subjectsArr: string[] | null = rec.subjects ? String(rec.subjects).split(/[;,]/).map(s=> s.trim()).filter(Boolean).slice(0,50) : null;
     const mentorAcademicNote = rec.mentorAcademicNote ? rec.mentorAcademicNote.slice(0,5000) : null;
     if (rowErrors.length === 0) {
       rows.push({
@@ -143,4 +137,13 @@ export function parseAndValidateCSV(csv: string, opts: ValidateOptions): ImportR
     errors,
     rows
   };
+}
+
+export function parseAndValidateCSV(csv: string, opts: ValidateOptions): ImportResult {
+  const records: RawStudentRow[] = parse(csv, {
+    columns: true,
+    skip_empty_lines: true,
+    trim: true
+  });
+  return validateStudentRecords(records, opts);
 }
