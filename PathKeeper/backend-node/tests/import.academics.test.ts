@@ -52,10 +52,10 @@ async function createActiveConfig() {
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME
   )`);
-  const rows: any[] = await prisma.$queryRawUnsafe("SELECT * FROM 'RiskModelConfig' WHERE active = 1 ORDER BY createdAt DESC LIMIT 1");
+  const rows: any[] = await prisma.$queryRawUnsafe("SELECT * FROM \"RiskModelConfig\" WHERE active = 1 ORDER BY createdAt DESC LIMIT 1");
   if (!rows.length) {
     const id = crypto.randomUUID();
-    await prisma.$executeRawUnsafe("INSERT INTO 'RiskModelConfig'(id, version, weights, thresholds, active, createdAt) VALUES(?, 1, ?, ?, 1, CURRENT_TIMESTAMP)", id, JSON.stringify({ attendance:0.4, gpa:0.3, assignments:0.2, notes:0.1 }), JSON.stringify({ high:0.7, medium:0.4 }));
+    await prisma.$executeRawUnsafe("INSERT INTO \"RiskModelConfig\"(id, version, weights, thresholds, active, createdAt) VALUES(?, 1, ?, ?, 1, CURRENT_TIMESTAMP)", id, JSON.stringify({ attendance:0.4, gpa:0.3, assignments:0.2, notes:0.1 }), JSON.stringify({ high:0.7, medium:0.4 }));
   }
 }
 

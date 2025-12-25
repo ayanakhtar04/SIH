@@ -480,7 +480,7 @@ async function maybeAttachInferredRisk(rows: any[], tx?: any) {
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME
     )`);
-  const rowsCfg = await client.$queryRawUnsafe("SELECT * FROM 'RiskModelConfig' WHERE active = 1 ORDER BY createdAt DESC LIMIT 1");
+  const rowsCfg = await client.$queryRawUnsafe("SELECT * FROM \"RiskModelConfig\" WHERE active = 1 ORDER BY createdAt DESC LIMIT 1");
     if (rowsCfg.length) {
       try {
         const parsed = JSON.parse(rowsCfg[0].weights);

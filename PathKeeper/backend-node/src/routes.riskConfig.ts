@@ -51,14 +51,14 @@ riskConfigRouter.get('/admin/config/risk-model', authRequired, async (req: Authe
   if (!isAdmin(req.user?.role)) return res.status(403).json({ ok:false, error:'Forbidden' });
   try {
     await ensureTable();
-    const rows = await prisma.$queryRawUnsafe<RawRiskRow[]>("SELECT * FROM 'RiskModelConfig' WHERE active = 1 ORDER BY createdAt DESC LIMIT 1");
+    const rows = await prisma.$queryRawUnsafe<RawRiskRow[]>("SELECT * FROM \"RiskModelConfig\" WHERE active = 1 ORDER BY createdAt DESC LIMIT 1");
     if (rows.length === 0) {
       // Create a default active row
       const id = crypto.randomUUID();
       const weights = JSON.stringify({ attendance:0.3, gpa:0.4, assignments:0.2, notes:0.1 });
       const thresholds = JSON.stringify({ high:0.7, medium:0.4 });
-      await prisma.$executeRawUnsafe("INSERT INTO 'RiskModelConfig'(id, version, weights, thresholds, active, createdAt) VALUES(?, 1, ?, ?, 1, CURRENT_TIMESTAMP)", id, weights, thresholds);
-      const inserted = await prisma.$queryRawUnsafe<RawRiskRow[]>("SELECT * FROM 'RiskModelConfig' WHERE id = ?", id);
+      await prisma.$executeRawUnsafe("INSERT INTO \"RiskModelConfig\"(id, version, weights, thresholds, active, createdAt) VALUES(?, 1, ?, ?, 1, CURRENT_TIMESTAMP)", id, weights, thresholds);
+      const inserted = await prisma.$queryRawUnsafe<RawRiskRow[]>("SELECT * FROM \"RiskModelConfig\" WHERE id = ?", id);
       return res.json({ ok:true, config: parseRow(inserted[0]) });
     }
     return res.json({ ok:true, config: parseRow(rows[0]) });
@@ -77,15 +77,15 @@ riskConfigRouter.put('/admin/config/risk-model', authRequired, async (req: Authe
   try {
     await ensureTable();
     // deactivate old
-    await prisma.$executeRawUnsafe("UPDATE 'RiskModelConfig' SET active = 0 WHERE active = 1");
+    await prisma.$executeRawUnsafe("UPDATE \"RiskModelConfig\" SET active = 0 WHERE active = 1");
     const id = crypto.randomUUID();
     const weightsStr = JSON.stringify(weights);
     const thresholdsStr = JSON.stringify(thresholds);
-  const prev = await prisma.$queryRawUnsafe<any[]>("SELECT MAX(version) as maxVersion FROM 'RiskModelConfig'");
+  const prev = await prisma.$queryRawUnsafe<any[]>("SELECT MAX(version) as maxVersion FROM \"RiskModelConfig\"");
   const maxVersion = prev && prev.length > 0 && typeof prev[0].maxVersion === 'number' ? prev[0].maxVersion : 0;
   const nextVersion = maxVersion + 1;
-    await prisma.$executeRawUnsafe("INSERT INTO 'RiskModelConfig'(id, version, weights, thresholds, active, createdAt, updatedAt) VALUES(?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", id, nextVersion, weightsStr, thresholdsStr);
-    const row = await prisma.$queryRawUnsafe<RawRiskRow[]>("SELECT * FROM 'RiskModelConfig' WHERE id = ?", id);
+    await prisma.$executeRawUnsafe("INSERT INTO \"RiskModelConfig\"(id, version, weights, thresholds, active, createdAt, updatedAt) VALUES(?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", id, nextVersion, weightsStr, thresholdsStr);
+    const row = await prisma.$queryRawUnsafe<RawRiskRow[]>("SELECT * FROM \"RiskModelConfig\" WHERE id = ?", id);
     return res.json({ ok:true, config: parseRow(row[0]) });
   } catch (e:any) {
     console.error('RiskModelConfig PUT error', e);
