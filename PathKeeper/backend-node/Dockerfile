@@ -40,7 +40,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD node 
 
 CMD ["node", "dist/server.js"]
 
-FROM node:20-alpine AS runtime
-WORKDIR /app
-ENV NODE_ENV=production
-ENV PUPPETEER_SKIP_DOWNLOAD=true
