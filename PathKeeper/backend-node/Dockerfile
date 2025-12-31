@@ -24,7 +24,7 @@ RUN npm install --production --omit=dev
 
 # Copy built dist and any runtime assets
 COPY --from=build /app/dist ./dist
-COPY .env.example ./
+# COPY .env.example ./
 
 # Non-root user for security
 RUN addgroup -S app && adduser -S app -G app
