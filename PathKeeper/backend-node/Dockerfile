@@ -2,6 +2,8 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+
 # Install dependencies (only package.json + lock if present for better caching)
 COPY package.json package-lock.json* ./
 RUN npm install --production=false
@@ -37,3 +39,8 @@ EXPOSE 6060
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD node -e "fetch('http://localhost:'+(process.env.PORT||6060)+'/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))" || exit 1
 
 CMD ["node", "dist/server.js"]
+
+FROM node:20-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PUPPETEER_SKIP_DOWNLOAD=true
