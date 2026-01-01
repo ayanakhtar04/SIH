@@ -38,3 +38,9 @@ EXPOSE 6060
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD node -e "fetch('http://localhost:'+(process.env.PORT||6060)+'/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))" || exit 1
 
 CMD ["node", "dist/server.js"]
+
+RUN npm install --production=false
+RUN npx prisma generate
+RUN npm run build
+
+COPY --from=build /app/node_modules ./node_modules
