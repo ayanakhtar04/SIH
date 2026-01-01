@@ -41,4 +41,4 @@ CMD ["node", "dist/server.js"]
 
 # THIS IS THE FIX
 COPY prisma ./prisma
-RUN npx prisma generate
+RUN ./node_modules/.bin/prisma generate
