@@ -10,13 +10,14 @@ async function main() {
 
   const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
   if (!admin) {
+    const hash = await bcrypt.hash('Admin@123', 10);
     await prisma.user.create({
       data: {
         id: crypto.randomUUID(),
         email: adminEmail,
         name: 'Platform Admin',
         role: 'admin',
-        passwordHash: '$2a$10$nL78xIbSpuCIwNV5rZNUm.7S5yFwq0dEivVHj9L1k.Qo0/REEmMTy'
+        passwordHash: hash
       }
     });
     console.log('Seeded admin user (email: admin@pathkeepers.local, password: Admin@123)');
