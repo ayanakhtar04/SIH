@@ -13,6 +13,7 @@ RUN npx prisma generate
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
+RUN npx esbuild src/prisma/seed.ts --bundle --platform=node --outfile=dist/seed.js
 
 
 FROM node:20-bookworm-slim AS runtime
@@ -30,5 +31,5 @@ USER app
 
 ENV NODE_ENV=production
 EXPOSE 10000
-CMD ["sh", "-c", "npx prisma db push && node dist/server.js"]
+CMD ["sh", "-c", "npx prisma db push && node dist/seed.js && node dist/server.js"]
 
