@@ -31,7 +31,7 @@ COPY --from=build /app/dist ./dist
 COPY package.json ./
 
 # Create non-root user AFTER files are copied
-RUN addgroup -S app && adduser -S app -G app
+RUN groupadd --system app && useradd --system --gid app app
 USER app
 
 CMD ["node", "dist/server.js"]
