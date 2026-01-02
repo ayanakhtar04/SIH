@@ -32,6 +32,7 @@ import mentorFormRouter from './routes.mentorForm';
 
 function createServer() {
   const app = express();
+  app.set('trust proxy', 1);
   // Security headers
   app.use(helmet());
   const allowlist = CONFIG.CORS_ORIGINS;
