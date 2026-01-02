@@ -1,7 +1,7 @@
 # =====================
 # BUILD STAGE
 # =====================
-FROM node:20-alpine AS build
+FROM node:20-bookworm-slim AS build
 WORKDIR /app
 
 ENV PUPPETEER_SKIP_DOWNLOAD=true
@@ -21,7 +21,7 @@ RUN npm run build
 # =====================
 # RUNTIME STAGE
 # =====================
-FROM node:20-alpine AS runtime
+FROM node:20-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
