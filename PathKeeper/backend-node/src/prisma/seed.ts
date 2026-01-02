@@ -8,35 +8,34 @@ async function main() {
   const mentorEmail = 'mentor@pathkeepers.local';
   const mentor2Email = 'mentor2@pathkeepers.local';
 
-  const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
-  if (!admin) {
-    const hash = await bcrypt.hash('Admin@123', 10);
-    await prisma.user.create({
-      data: {
-        id: crypto.randomUUID(),
-        email: adminEmail,
-        name: 'Platform Admin',
-        role: 'admin',
-        passwordHash: hash
-      }
-    });
-    console.log('Seeded admin user (email: admin@pathkeepers.local, password: Admin@123)');
-  }
+  const adminHash = await bcrypt.hash('Admin@123', 10);
+  await prisma.user.upsert({
+    where: { email: adminEmail },
+    update: { passwordHash: adminHash },
+    create: {
+      id: crypto.randomUUID(),
+      email: adminEmail,
+      name: 'Platform Admin',
+      role: 'admin',
+      passwordHash: adminHash
+    }
+  });
+  console.log('Seeded/Updated admin user (email: admin@pathkeepers.local, password: Admin@123)');
 
   // Secondary requested admin account
-  const secondaryAdmin = await prisma.user.findUnique({ where: { email: secondaryAdminEmail } });
-  if (!secondaryAdmin) {
-    await prisma.user.create({
-      data: {
-        id: crypto.randomUUID(),
-        email: secondaryAdminEmail,
-        name: 'Secondary Admin',
-        role: 'admin',
-        passwordHash: await bcrypt.hash('Admin123', 10)
-      }
-    });
-    console.log('Seeded secondary admin (email: admin@admin.com, password: Admin123)');
-  }
+  const secondaryHash = await bcrypt.hash('Admin123', 10);
+  await prisma.user.upsert({
+    where: { email: secondaryAdminEmail },
+    update: { passwordHash: secondaryHash },
+    create: {
+      id: crypto.randomUUID(),
+      email: secondaryAdminEmail,
+      name: 'Secondary Admin',
+      role: 'admin',
+      passwordHash: secondaryHash
+    }
+  });
+  console.log('Seeded/Updated secondary admin (email: admin@admin.com, password: Admin123)');
 
   const mentor = await prisma.user.findUnique({ where: { email: mentorEmail } });
   if (!mentor) {
