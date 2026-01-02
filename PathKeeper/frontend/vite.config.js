@@ -9,6 +9,7 @@ import react from '@vitejs/plugin-react'
 const BACKEND_URL = (globalThis?.process && globalThis.process.env?.BACKEND_URL) || 'http://localhost:6060';
 
 export default defineConfig({
+  base: "/",
   plugins: [react()],
   server: {
     proxy: {
