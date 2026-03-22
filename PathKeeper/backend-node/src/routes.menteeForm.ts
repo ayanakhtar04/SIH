@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { prisma } from './prisma/client';
 import { authRequired, AuthedRequest } from './auth/middleware';
 import { isMentor } from './auth/roles';
@@ -103,7 +104,12 @@ router.get('/:studentId/pdf', authRequired, async (req: AuthedRequest, res) => {
     if (!rows || rows.length === 0) return res.status(404).json({ ok: false, error: 'not found' });
     
     const data = JSON.parse(rows[0].data);
-    const tplPath = path.join(__dirname, 'templates', 'menteeForm.ejs');
+
+    // Resolve template path for both dev (src) and compiled (dist) environments
+    let tplPath = path.join(__dirname, 'templates', 'menteeForm.ejs');
+    if (!fs.existsSync(tplPath)) {
+      tplPath = path.join(process.cwd(), 'src', 'templates', 'menteeForm.ejs');
+    }
     const html = await ejs.renderFile(tplPath, { data, studentId }, { async: true });
 
     // Launch puppeteer and render PDF
