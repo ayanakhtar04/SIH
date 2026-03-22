@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/src/templates ./src/templates
 COPY package.json ./
 COPY --from=build /app/prisma ./prisma
 
