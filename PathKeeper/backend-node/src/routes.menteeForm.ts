@@ -15,21 +15,18 @@ router.post('/', authRequired, async (req: AuthedRequest, res) => {
     if (!user || user.role !== 'viewer') return res.status(403).json({ ok: false, error: 'Only student accounts may submit form' });
     const payload = req.body || {};
     const jsonString = JSON.stringify(payload);
-    const now = new Date().toISOString();
     const id = require('crypto').randomUUID();
 
     // Upsert using raw SQL because Prisma Client generation is locked
     await prisma.$executeRawUnsafe(
       `
       INSERT INTO "MenteeForm" ("id","studentId","data","createdAt","updatedAt")
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT("studentId") DO UPDATE SET "data" = EXCLUDED."data", "updatedAt" = EXCLUDED."updatedAt"
+      VALUES ($1, $2, $3, NOW(), NOW())
+      ON CONFLICT("studentId") DO UPDATE SET "data" = EXCLUDED."data", "updatedAt" = NOW()
       `,
       id,
       user.id,
-      jsonString,
-      now,
-      now
+      jsonString
     );
 
     return res.json({ ok: true, data: payload });
@@ -49,21 +46,18 @@ router.post('/:studentId', authRequired, async (req: AuthedRequest, res) => {
 
     const payload = req.body || {};
     const jsonString = JSON.stringify(payload);
-    const now = new Date().toISOString();
     const id = require('crypto').randomUUID();
 
     // Upsert
     await prisma.$executeRawUnsafe(
       `
       INSERT INTO "MenteeForm" ("id","studentId","data","createdAt","updatedAt")
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT("studentId") DO UPDATE SET "data" = EXCLUDED."data", "updatedAt" = EXCLUDED."updatedAt"
+      VALUES ($1, $2, $3, NOW(), NOW())
+      ON CONFLICT("studentId") DO UPDATE SET "data" = EXCLUDED."data", "updatedAt" = NOW()
       `,
       id,
       studentId,
-      jsonString,
-      now,
-      now
+      jsonString
     );
 
     return res.json({ ok: true, data: payload });

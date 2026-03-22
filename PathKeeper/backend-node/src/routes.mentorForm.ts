@@ -14,21 +14,18 @@ router.post('/', authRequired, async (req: AuthedRequest, res) => {
     
     const payload = req.body || {};
     const jsonString = JSON.stringify(payload);
-    const now = new Date().toISOString();
     const id = crypto.randomUUID();
 
     // Upsert using raw SQL because Prisma Client generation is locked
     await prisma.$executeRawUnsafe(
       `
       INSERT INTO "MentorForm" ("id","mentorId","data","createdAt","updatedAt")
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT("mentorId") DO UPDATE SET "data" = EXCLUDED."data", "updatedAt" = EXCLUDED."updatedAt"
+      VALUES ($1, $2, $3, NOW(), NOW())
+      ON CONFLICT("mentorId") DO UPDATE SET "data" = EXCLUDED."data", "updatedAt" = NOW()
       `,
       id,
       user.id,
-      jsonString,
-      now,
-      now
+      jsonString
     );
 
     return res.json({ ok: true, data: payload });
