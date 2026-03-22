@@ -112,10 +112,9 @@ router.get('/:studentId/pdf', authRequired, async (req: AuthedRequest, res) => {
     }
     const html = await ejs.renderFile(tplPath, { data, studentId }, { async: true });
 
-    // Launch puppeteer and render PDF
+    // Launch puppeteer and render PDF (Chrome bundled with Puppeteer)
     const browser = await puppeteer.launch({
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
     });
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
