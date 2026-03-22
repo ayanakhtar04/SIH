@@ -13,6 +13,7 @@ RUN npx prisma generate
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
+RUN mkdir -p dist/templates && cp -r src/templates/* dist/templates/
 RUN npx esbuild src/prisma/seed.ts --bundle --platform=node --outfile=dist/seed.js
 
 
@@ -23,7 +24,6 @@ RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/src/templates ./src/templates
 COPY package.json ./
 COPY --from=build /app/prisma ./prisma
 

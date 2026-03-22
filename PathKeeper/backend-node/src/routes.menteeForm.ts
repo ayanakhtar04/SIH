@@ -103,7 +103,7 @@ router.get('/:studentId/pdf', authRequired, async (req: AuthedRequest, res) => {
     if (!rows || rows.length === 0) return res.status(404).json({ ok: false, error: 'not found' });
     
     const data = JSON.parse(rows[0].data);
-    const tplPath = path.join(process.cwd(), 'src', 'templates', 'menteeForm.ejs');
+    const tplPath = path.join(__dirname, 'templates', 'menteeForm.ejs');
     const html = await ejs.renderFile(tplPath, { data, studentId }, { async: true });
 
     // Launch puppeteer and render PDF
