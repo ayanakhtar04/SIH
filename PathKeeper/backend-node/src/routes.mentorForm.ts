@@ -18,11 +18,18 @@ router.post('/', authRequired, async (req: AuthedRequest, res) => {
     const id = crypto.randomUUID();
 
     // Upsert using raw SQL because Prisma Client generation is locked
-    await prisma.$executeRawUnsafe(`
-      INSERT INTO "MentorForm" (id, mentorId, data, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(mentorId) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt
-    `, id, user.id, jsonString, now, now);
+    await prisma.$executeRawUnsafe(
+      `
+      INSERT INTO "MentorForm" ("id","mentorId","data","createdAt","updatedAt")
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT("mentorId") DO UPDATE SET "data" = EXCLUDED."data", "updatedAt" = EXCLUDED."updatedAt"
+      `,
+      id,
+      user.id,
+      jsonString,
+      now,
+      now
+    );
 
     return res.json({ ok: true, data: payload });
   } catch (err: any) {
@@ -50,7 +57,10 @@ router.get('/:mentorId', authRequired, async (req: AuthedRequest, res) => {
 
     if (!allow) return res.status(403).json({ ok: false, error: 'Forbidden' });
 
-    const rows: any[] = await prisma.$queryRawUnsafe(`SELECT data FROM "MentorForm" WHERE mentorId = ? LIMIT 1`, mentorId);
+    const rows: any[] = await prisma.$queryRawUnsafe(
+      `SELECT "data" FROM "MentorForm" WHERE "mentorId" = $1 LIMIT 1`,
+      mentorId
+    );
     if (!rows || rows.length === 0) return res.status(404).json({ ok: false, error: 'Not found' });
     
     return res.json({ ok: true, data: JSON.parse(rows[0].data) });

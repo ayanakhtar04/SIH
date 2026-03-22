@@ -19,11 +19,18 @@ router.post('/', authRequired, async (req: AuthedRequest, res) => {
     const id = require('crypto').randomUUID();
 
     // Upsert using raw SQL because Prisma Client generation is locked
-    await prisma.$executeRawUnsafe(`
-      INSERT INTO "MenteeForm" (id, studentId, data, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(studentId) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt
-    `, id, user.id, jsonString, now, now);
+    await prisma.$executeRawUnsafe(
+      `
+      INSERT INTO "MenteeForm" ("id","studentId","data","createdAt","updatedAt")
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT("studentId") DO UPDATE SET "data" = EXCLUDED."data", "updatedAt" = EXCLUDED."updatedAt"
+      `,
+      id,
+      user.id,
+      jsonString,
+      now,
+      now
+    );
 
     return res.json({ ok: true, data: payload });
   } catch (err: any) {
@@ -46,11 +53,18 @@ router.post('/:studentId', authRequired, async (req: AuthedRequest, res) => {
     const id = require('crypto').randomUUID();
 
     // Upsert
-    await prisma.$executeRawUnsafe(`
-      INSERT INTO "MenteeForm" (id, studentId, data, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(studentId) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt
-    `, id, studentId, jsonString, now, now);
+    await prisma.$executeRawUnsafe(
+      `
+      INSERT INTO "MenteeForm" ("id","studentId","data","createdAt","updatedAt")
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT("studentId") DO UPDATE SET "data" = EXCLUDED."data", "updatedAt" = EXCLUDED."updatedAt"
+      `,
+      id,
+      studentId,
+      jsonString,
+      now,
+      now
+    );
 
     return res.json({ ok: true, data: payload });
   } catch (err: any) {
@@ -67,7 +81,10 @@ router.get('/:studentId', authRequired, async (req: AuthedRequest, res) => {
     const allow = (user.id === studentId) || isMentor(user.role);
     if (!allow) return res.status(403).json({ ok: false, error: 'forbidden' });
     
-    const rows: any[] = await prisma.$queryRawUnsafe(`SELECT data FROM "MenteeForm" WHERE studentId = ? LIMIT 1`, studentId);
+    const rows: any[] = await prisma.$queryRawUnsafe(
+      `SELECT "data" FROM "MenteeForm" WHERE "studentId" = $1 LIMIT 1`,
+      studentId
+    );
     if (!rows || rows.length === 0) return res.status(404).json({ ok: false, error: 'not found' });
     
     return res.json({ ok: true, data: JSON.parse(rows[0].data) });
@@ -85,7 +102,10 @@ router.get('/:studentId/pdf', authRequired, async (req: AuthedRequest, res) => {
     const allow = (user.id === studentId) || isMentor(user.role);
     if (!allow) return res.status(403).json({ ok: false, error: 'forbidden' });
     
-    const rows: any[] = await prisma.$queryRawUnsafe(`SELECT data FROM "MenteeForm" WHERE studentId = ? LIMIT 1`, studentId);
+    const rows: any[] = await prisma.$queryRawUnsafe(
+      `SELECT "data" FROM "MenteeForm" WHERE "studentId" = $1 LIMIT 1`,
+      studentId
+    );
     if (!rows || rows.length === 0) return res.status(404).json({ ok: false, error: 'not found' });
     
     const data = JSON.parse(rows[0].data);
